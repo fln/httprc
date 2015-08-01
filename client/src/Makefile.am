@@ -1,2 +1,2 @@
-bin_PROGRAMS = httprc
-httprc_SOURCES = main.c
+bin_PROGRAMS = httprcclient
+httprcclient_SOURCES = main.c

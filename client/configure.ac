@@ -8,6 +8,5 @@ AC_PROG_CC
 AC_PROG_INSTALL
 
 AC_CONFIG_FILES([Makefile
-                 src/Makefile
-		 doc/Makefile])
+                 src/Makefile])
 AC_OUTPUT
