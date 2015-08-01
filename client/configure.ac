@@ -1,0 +1,13 @@
+AC_PREREQ([2.68])
+AC_INIT([httprcclient], [0.1], [httprcclient@fln.lt])
+AM_INIT_AUTOMAKE([-Wall foreign check-news silent-rules -Werror])
+AC_CONFIG_SRCDIR([src/main.c])
+AC_CONFIG_HEADERS([src/config.h])
+
+AC_PROG_CC
+AC_PROG_INSTALL
+
+AC_CONFIG_FILES([Makefile
+                 src/Makefile
+		 doc/Makefile])
+AC_OUTPUT
