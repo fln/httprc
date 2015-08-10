@@ -13,20 +13,16 @@ import (
 	"net/http"
 )
 
-type Constraints struct {
-	WaitTimeMs       int `json:"waitTimeMs"`
-	OutputBufferSize int `json:"outputBufferSize"`
-}
-
 type ExecTask struct {
-	ID          string            `json:"id"`
-	Command     string            `json:"command"`
-	Args        []string          `json:"args"`
-	DaemonMode  bool              `json:"daemonMode"`
-	WorkDir     string            `json:"workDir,omitempty"`
-	Environment map[string]string `json:"environment,omitempty"`
-	Stdin       []byte            `json:"stdin"`
-	Constraints *Constraints      `json:"constraints,omitempty"`
+	ID               string            `json:"id"`
+	DaemonMode       bool              `json:"daemonMode"`
+	Command          string            `json:"command"`
+	Args             []string          `json:"args,omitempty"`
+	WorkDir          string            `json:"workDir,omitempty"`
+	Environment      map[string]string `json:"environment,omitempty"`
+	Stdin            string            `json:"stdin,omitempty"`
+	WaitTimeMs       int               `json:"waitTimeMs"`
+	OutputBufferSize int               `json:"outputBufferSize"`
 }
 
 type Task struct {
@@ -76,16 +72,16 @@ func RespondJsonObjectCustom(w http.ResponseWriter, o interface{}, indent bool, 
 
 func hello(w http.ResponseWriter, r *http.Request, userID string) {
 	task := Task{
-		SelepMs: 1000,
+		SelepMs: 2000,
 		Exec: &ExecTask{
 			ID:         newUUID(),
-			Command:    "/bin/ls",
-			Args:       []string{"-la"},
 			DaemonMode: false,
-			Constraints: &Constraints{
-				WaitTimeMs:       10000,
-				OutputBufferSize: 1024 * 1024,
-			},
+			Command:    "/bin/cat",
+			//Args:       []string{"-", "/etc/passwd", "/proc/vmallocinfo"},
+			Args:             []string{"/etc/passwd", "/proc/vmallocinfo"},
+			Stdin:            "this is \x00 a test",
+			WaitTimeMs:       10000,
+			OutputBufferSize: 1024 * 1024,
 		},
 	}
 	RespondJsonObject(w, &task, true)
