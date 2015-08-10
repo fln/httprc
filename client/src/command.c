@@ -1,3 +1,4 @@
+#include "config.h"
 #include "command.h"
 #include "result.h"
 #include "main.h"
@@ -70,7 +71,7 @@ static int tv_diff_ms(struct timeval *start) {
 	return (now.tv_sec - start->tv_sec)*1000 + (now.tv_usec - start->tv_usec)/1000;
 }
 
-static struct result *manage_process(struct command *c, pid_t pid, int stdoutfd, int stderrfd, int sfd) {
+static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, int stdoutfd, int stderrfd, int sfd) {
 	struct result *res;
 	int status = 0;
 	ssize_t len;
@@ -79,9 +80,9 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdoutfd,
 	int ready;
 	int epfd;
 	struct epoll_event ev;
-	int pending_fd = 0;
 	struct timeval start_time;
 	struct signalfd_siginfo siginfo;
+	size_t stdin_written = 0;
 
 	gettimeofday(&start_time, NULL);
 	res = result_new(c->output_size);
@@ -89,47 +90,59 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdoutfd,
 		goto error;
 	}
 
-	epfd = err_filter(epoll_create1(0), "epoll_create1");
+	printf("managing pid %d\n", pid);
+
+	err_fatal(epfd = epoll_create1(0));
+
+	ev.events = EPOLLOUT;
+	ev.data.fd = stdinfd;
+	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stdinfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = stdoutfd;
-	err_filter(epoll_ctl(epfd, EPOLL_CTL_ADD, stdoutfd, &ev), "epoll_ctl");
-	pending_fd += 1;
+	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stdoutfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = stderrfd;
-	err_filter(epoll_ctl(epfd, EPOLL_CTL_ADD, stderrfd, &ev), "epoll_ctl");
-	pending_fd += 1;
+	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stderrfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = sfd;
-	err_filter(epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &ev), "epoll_ctl");
-	pending_fd += 1;
+	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &ev));
 
-	while (pending_fd > 0) {
+	while (true) { // Only two ways out of it: timeout or SIGCHILD
 		timeout = c->wait_time_ms - tv_diff_ms(&start_time);
 		if (timeout <= 0) {
 			kill(pid, SIGKILL);
-			timeout = -1;
+			break;
 		}
-		printf("Timeout ms: %d\n", timeout);
 		ready = epoll_wait(epfd, &ev, 1, timeout);
-		printf("ready = %d, fd = %d\n", ready, ev.data.fd);
 		if (ready == -1 && errno == EINTR) {
 			continue;
 		}
 		// Exit on error
-		err_filter(ready, "epoll_wait");
+		err_fatal(ready);
 
 		if (ready == 0) { // timeout occured
 			continue;
 		}
 
+		if (ev.data.fd == stdinfd) {
+			len = write(stdinfd, c->stdin_buffer + stdin_written, c->stdin_size - stdin_written);
+
+			if (len > 0) {
+				stdin_written += len;
+			}
+			if (len <= 0 || stdin_written == c->stdin_size) {
+				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stdinfd, NULL));
+				err_fatal(close(stdinfd));
+			}
+		}
+
 		if (ev.data.fd == stdoutfd) {
 			len = read(stdoutfd, res->stdout_buffer + res->stdout_size, max_len - res->stdout_size);
 			if (len <= 0) {
-				err_filter(epoll_ctl(epfd, EPOLL_CTL_DEL, stdoutfd, NULL), "epoll_ctl");
-				pending_fd -= 1;
+				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stdoutfd, NULL));
 				continue;
 			}
 			res->stdout_size += len;
@@ -138,8 +151,7 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdoutfd,
 		if (ev.data.fd == stderrfd) {
 			len = read(stderrfd, res->stderr_buffer + res->stderr_size, max_len - res->stderr_size);
 			if (len <= 0) {
-				err_filter(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL), "epoll_ctl");
-				pending_fd -= 1;
+				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
 				continue;
 			}
 			res->stderr_size += len;
@@ -148,35 +160,31 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdoutfd,
 		if (ev.data.fd == sfd) {
 			len = read(sfd, &siginfo, sizeof(siginfo));
 			if (len <= 0) {
+				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
 				continue;
-				//err_filter(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL), "epoll_ctl");
-				//pending_fd -= 1;
-				//continue;
 			}
 			if (siginfo.ssi_pid == pid) {
 				break;
 			}
-			// lost SIGCHILD signal?
+			fprintf(stderr, PACKAGE_NAME ": stray SIGCHILD for PID %d, reaping possible zombie\n", siginfo.ssi_pid);
 			waitpid(siginfo.ssi_pid, NULL, WNOHANG);
 		}
 
 	}
 
-	err_filter(close(epfd), "close");
+	err_fatal(close(epfd));
+	err_fatal(waitpid(pid, &res->return_code, 0));
+	res->duration_ms = tv_diff_ms(&start_time);
+	res->id = c->id;
 
-	//err_filter(close(stdoutfd), "close");
-	//err_filter(close(stderrfd), "close");
-	waitpid(pid, &res->return_code, 0);
-	if (timeout <= 0) {
-		printf("Exited loop after timeout\n");
-	} else {
-		printf("Child terminated on its own, timeout = %d\n", timeout);
-	}
-	//waitpid(pid, &res->return_code, 0);
-	printf("Child RC: %d\n", res->return_code);
-	printf("Std out[%zu]: %.*s\n", res->stdout_size, (int)res->stdout_size, res->stdout_buffer);
-	printf("Std err[%zu]: %.*s\n", res->stderr_size, (int)res->stderr_size, res->stderr_buffer);
+	result_print(res);
 error:
+	if (stdin_written != c->stdin_size) {
+		err_fatal(close(stdinfd));
+	}
+	err_fatal(close(stdoutfd));
+	err_fatal(close(stderrfd));
+
 	return res;
 }
 
@@ -199,52 +207,79 @@ void command_print(struct command *c) {
 	printf("\tOutput size: %zu\n", c->output_size);
 }
 
+//static inline void close_pipe_parent(int fdpair[2]) {
+//	err_fatal(close(fdpair[1]));
+//}
+
+static inline void fd_pair_close(int fd[2]) {
+	err_fatal(close(fd[0])); // close parent end
+	err_fatal(close(fd[1])); // close child end
+}
+
+static inline void fd_pair_child(int fd[2], int dst_fd) {
+	int local = 1;
+	int remote = 0;
+
+	if (dst_fd == STDIN_FILENO) {
+		local = 0;
+		remote = 1;
+	}
+
+	err_fatal(close(fd[remote])); // close parent end
+	if (fd[local] != dst_fd) {
+		err_fatal(dup2(fd[local], dst_fd)); // remap child end
+		err_fatal(close(fd[local]));        // close child end duplicate
+	}
+}
+
+#define READ_FD 0
+#define WRITE_FD 1
 struct result *command_execute(struct command *c) {
 	int status;
 	pid_t pid;
+	int stdinfd[2];
 	int stdoutfd[2];
 	int stderrfd[2];
 	int sfd;
 	sigset_t mask;
 	struct result *res;
 
-	err_filter(pipe(stdoutfd), "pipe");
-	err_filter(pipe(stderrfd), "pipe");
+	err_fatal(pipe(stdinfd));
+	err_fatal(pipe(stdoutfd));
+	err_fatal(pipe(stderrfd));
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
-	err_filter(sigprocmask(SIG_BLOCK, &mask, NULL), "sigprocmask");
-	sfd = err_filter(signalfd(-1, &mask, 0), "signalfd");
+	err_fatal(sigprocmask(SIG_BLOCK, &mask, NULL));
+	err_fatal(sfd = signalfd(-1, &mask, 0));
 
 	pid = fork();
 	if (pid == -1) {
-		err_filter(close(stdoutfd[0]), "close");
-		err_filter(close(stdoutfd[1]), "close");
-		err_filter(close(stderrfd[0]), "close");
-		err_filter(close(stderrfd[1]), "close");
+		fd_pair_close(stdinfd);
+		fd_pair_close(stdoutfd);
+		fd_pair_close(stderrfd);
 		
 		printf("Error in fork()\n");
 		return NULL;
 	}
 	if (pid == 0) {	// Child case
-		err_filter(close(stdoutfd[0]), "close");
-		err_filter(dup2(stdoutfd[1], STDOUT_FILENO), "dup2");
-		err_filter(close(stdoutfd[1]), "close");
+		fd_pair_child(stdinfd, STDIN_FILENO);
+		fd_pair_child(stdoutfd, STDOUT_FILENO);
+		fd_pair_child(stderrfd, STDERR_FILENO);
 
-		err_filter(close(stderrfd[0]), "close");
-		err_filter(dup2(stderrfd[1], STDERR_FILENO), "dup2");
-		err_filter(close(stderrfd[1]), "close");
-
-		err_filter(execve(c->command, (char * const *)c->args, environ), "execve");
-		// This point is never reached, err_filter exits in execve failure.
+		err_fatal(execve(c->command, (char * const *)c->args, environ));
+		// This point is never reached, err_fatal exits in case of
+		// execve failure.
 	}
 	// Parent case
-	err_filter(close(stdoutfd[1]), "close");
-	err_filter(close(stderrfd[1]), "close");
-	res = manage_process(c, pid, stdoutfd[0], stderrfd[0], sfd);	
-	err_filter(close(stdoutfd[0]), "close");
-	err_filter(close(stderrfd[0]), "close");
-	err_filter(close(sfd), "close");
+	err_fatal(close(stdinfd[READ_FD]));
+	err_fatal(close(stdoutfd[WRITE_FD]));
+	err_fatal(close(stderrfd[WRITE_FD]));
+	// manage_process is responsible for closing stdin/out/err descriptors
+	res = manage_process(c, pid, stdinfd[WRITE_FD], stdoutfd[READ_FD], stderrfd[READ_FD], sfd);
+	err_fatal(close(sfd));
+	err_fatal(sigprocmask(SIG_UNBLOCK, &mask, NULL));
+	
 	return res;
 }
 

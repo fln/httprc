@@ -38,21 +38,13 @@ static struct argp_option options[] = {
 	{"ca-cert",     'a', "FILE", 0, "CA certificate to check backend certificate against." },
 	{"client-cert", 'c', "FILE", 0, "Client certificate (used to authenticate to the backend server)." },
 	{"client-key",  'k', "FILE", 0, "Client private key (used to authenticate to the backend server)." },
-	{"backend-url", 'u', "URL",  0, "Backend URL." },
 	{ NULL },
 };
 
 
 CURLcode curlc_filter(CURLcode rc, const char *opt) {
 	if (rc != CURLE_OK) {
-		fprintf(stderr, "error for %s (%d): %s\n", opt, rc, curl_easy_strerror(rc));
-	}
-	return rc;
-}
-
-int err_filter(int rc, const char *func_name) {
-	if (rc == -1) {
-		fatal_error("%s(...) returned -1\n", func_name);
+		fprintf(stderr, PACKAGE_NAME ": libcurl: %s (%d): %s\n", opt, rc, curl_easy_strerror(rc));
 	}
 	return rc;
 }
@@ -111,9 +103,17 @@ static void graceful_exit(int sig) {
 }
 
 static void attach_sighandlers(struct httprcclient *app) {
+	struct sigaction sa;
+
 	_app = app;
-	signal(SIGINT, graceful_exit);
-	signal(SIGQUIT, graceful_exit);
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = graceful_exit;
+	sa.sa_flags = SA_RESTART;
+
+	//signal(SIGINT, graceful_exit);
+	//signal(SIGQUIT, graceful_exit);
+	err_fatal(sigaction(SIGINT, &sa, NULL));
+	err_fatal(sigaction(SIGQUIT, &sa, NULL));
 }
 
 int process_response(struct httprcclient *app, struct response_buf *buf, useconds_t *sleep_interval) {
@@ -128,12 +128,10 @@ int process_response(struct httprcclient *app, struct response_buf *buf, usecond
 
 	memset(&c, 0, sizeof(c));
 
-	//printf("%.*s", (int)buf->size, buf->start);
-
 	task = json_loadb(buf->start, buf->size, JSON_ALLOW_NUL, &error);
 	if (!task) {
-		printf("jansson error: %s\n", error.text);
-		goto end;
+		fprintf(stderr, PACKAGE_NAME ": jansson: %s\n", error.text);
+		goto error_load;
 	}
 
 	if (!json_is_object(task)) {
@@ -154,6 +152,7 @@ int process_response(struct httprcclient *app, struct response_buf *buf, usecond
 
 end:
 	json_decref(task);
+error_load:
 	return 0;
 }
 
@@ -178,7 +177,10 @@ void main_loop(struct httprcclient *app) {
 
 
 		res = curl_easy_perform(app->curl);
-		printf("CURL result: %d\n", res);
+		if (res != CURLE_OK) {
+			fprintf(stderr, PACKAGE_NAME ": libcurl: %s\n", curl_easy_strerror(res));
+			goto skip;
+		}
 
 		process_response(app, buf, &sleep_interval);
 skip:
@@ -197,7 +199,7 @@ int main(int argc, char *argv[]) {
 
 	app.curl = curl_easy_init();
 	if (!app.curl) {
-		fprintf(stderr, "Error allocating libcurl context.\n");
+		fprintf(stderr, PACKAGE_NAME ": error allocating libcurl context\n");
 		return -1;
 	}
 
