@@ -9,10 +9,10 @@
 #include <curl/curl.h>
 
 #include "config.h"
-#include "main.h"
 #include "command.h"
 #include "result.h"
 #include "response_buf.h"
+#include "log.h"
 
 struct httprcclient {
 	char *ca_cert;
@@ -110,10 +110,45 @@ static void attach_sighandlers(struct httprcclient *app) {
 	sa.sa_handler = graceful_exit;
 	sa.sa_flags = SA_RESTART;
 
-	//signal(SIGINT, graceful_exit);
-	//signal(SIGQUIT, graceful_exit);
-	err_fatal(sigaction(SIGINT, &sa, NULL));
-	err_fatal(sigaction(SIGQUIT, &sa, NULL));
+	die_std_error(sigaction(SIGINT, &sa, NULL));
+	die_std_error(sigaction(SIGQUIT, &sa, NULL));
+}
+
+size_t null_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
+	return size * nmemb;
+}
+
+void report_result(struct httprcclient *app, struct result *res) {
+	CURLcode rc;
+	json_t *result_json;
+	char *json_bytes;
+
+	result_json = result_to_json(res);
+	if (!result_json) {
+		return;
+	}
+
+	json_bytes = json_dumps(result_json, JSON_INDENT(2) | JSON_ENSURE_ASCII);
+	if (!json_bytes) {
+		return;
+	}
+
+	printf("--------- TX ---------\n");
+	printf("%s\n", json_bytes);
+
+
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPGET, 0), "CURLOPT_HTTPGET");
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POST, 1), "CURLOPT_POST");
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POSTFIELDS, json_bytes), "CURLOPT_POSTFIELDS");
+
+	curl_easy_setopt(app->curl, CURLOPT_WRITEDATA, NULL);
+	curl_easy_setopt(app->curl, CURLOPT_WRITEFUNCTION, null_write_cb);
+
+	rc = curl_easy_perform(app->curl);
+	printf("curl rc = %d\n", rc);
+
+	free(json_bytes);
+	json_decref(result_json);
 }
 
 int process_response(struct httprcclient *app, struct response_buf *buf, useconds_t *sleep_interval) {
@@ -125,6 +160,8 @@ int process_response(struct httprcclient *app, struct response_buf *buf, usecond
 	struct command c;
 	struct result *res;
 	json_int_t sleep_ms = 0;
+
+	json_t *result_j;
 
 	memset(&c, 0, sizeof(c));
 
@@ -143,8 +180,10 @@ int process_response(struct httprcclient *app, struct response_buf *buf, usecond
 			*sleep_interval = sleep_ms * 1000;
 		} else if (strcmp(key, "exec") == 0 && json_is_object(value)) {
 			command_parse(&c, value);
-			command_print(&c);
 			res = command_execute(&c);
+			if (res) {
+				report_result(app, res);
+			}
 			command_free(&c);
 			result_free(res);
 		}
@@ -161,27 +200,33 @@ void main_loop(struct httprcclient *app) {
 	useconds_t sleep_interval;
 	struct response_buf *buf;
 
+	buf = response_buf_new();
+
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_CAINFO, app->ca_cert), "CURLOPT_CAINFO");
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLCERT, app->client_cert), "CURLOPT_SSLCERT");
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLKEY, app->client_key), "CURLOPT_SSLKEY");
 
-	buf = response_buf_new();
+
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_URL, app->backend_url), "CURLOPT_URL");
 	while (!app->graceful_exit) {
 		sleep_interval = 5*1000*1000;
 		response_buf_reset(buf);
 
-		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_URL, app->backend_url), "CURLOPT_URL");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POST, 0), "CURLOPT_POST");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POSTFIELDS, NULL), "CURLOPT_POSTFIELDS");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPGET, 1), "CURLOPT_HTTPGET");
 
 		curl_easy_setopt(app->curl, CURLOPT_WRITEDATA, buf);
 		curl_easy_setopt(app->curl, CURLOPT_WRITEFUNCTION, response_buf_write_cb);
 
-
 		res = curl_easy_perform(app->curl);
 		if (res != CURLE_OK) {
-			fprintf(stderr, PACKAGE_NAME ": libcurl: %s\n", curl_easy_strerror(res));
+			log_error("libcurl: %s\n", curl_easy_strerror(res));
 			goto skip;
 		}
 
+		printf("--------- RX ---------\n");
+		printf("%.*s\n", (int)buf->size, buf->start);
 		process_response(app, buf, &sleep_interval);
 skip:
 		usleep(sleep_interval);

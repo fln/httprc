@@ -1,7 +1,7 @@
 #include "config.h"
 #include "command.h"
 #include "result.h"
-#include "main.h"
+#include "log.h"
 
 #include <unistd.h>
 #include <string.h>
@@ -90,25 +90,23 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 		goto error;
 	}
 
-	printf("managing pid %d\n", pid);
-
-	err_fatal(epfd = epoll_create1(0));
+	die_std_error(epfd = epoll_create1(0));
 
 	ev.events = EPOLLOUT;
 	ev.data.fd = stdinfd;
-	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stdinfd, &ev));
+	die_std_error(epoll_ctl(epfd, EPOLL_CTL_ADD, stdinfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = stdoutfd;
-	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stdoutfd, &ev));
+	die_std_error(epoll_ctl(epfd, EPOLL_CTL_ADD, stdoutfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = stderrfd;
-	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, stderrfd, &ev));
+	die_std_error(epoll_ctl(epfd, EPOLL_CTL_ADD, stderrfd, &ev));
 
 	ev.events = EPOLLIN;
 	ev.data.fd = sfd;
-	err_fatal(epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &ev));
+	die_std_error(epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &ev));
 
 	while (true) { // Only two ways out of it: timeout or SIGCHILD
 		timeout = c->wait_time_ms - tv_diff_ms(&start_time);
@@ -121,7 +119,7 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 			continue;
 		}
 		// Exit on error
-		err_fatal(ready);
+		die_std_error(ready);
 
 		if (ready == 0) { // timeout occured
 			continue;
@@ -134,15 +132,15 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 				stdin_written += len;
 			}
 			if (len <= 0 || stdin_written == c->stdin_size) {
-				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stdinfd, NULL));
-				err_fatal(close(stdinfd));
+				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stdinfd, NULL));
+				die_std_error(close(stdinfd));
 			}
 		}
 
 		if (ev.data.fd == stdoutfd) {
 			len = read(stdoutfd, res->stdout_buffer + res->stdout_size, max_len - res->stdout_size);
 			if (len <= 0) {
-				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stdoutfd, NULL));
+				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stdoutfd, NULL));
 				continue;
 			}
 			res->stdout_size += len;
@@ -151,7 +149,7 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 		if (ev.data.fd == stderrfd) {
 			len = read(stderrfd, res->stderr_buffer + res->stderr_size, max_len - res->stderr_size);
 			if (len <= 0) {
-				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
+				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
 				continue;
 			}
 			res->stderr_size += len;
@@ -160,7 +158,7 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 		if (ev.data.fd == sfd) {
 			len = read(sfd, &siginfo, sizeof(siginfo));
 			if (len <= 0) {
-				err_fatal(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
+				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
 				continue;
 			}
 			if (siginfo.ssi_pid == pid) {
@@ -172,18 +170,16 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 
 	}
 
-	err_fatal(close(epfd));
-	err_fatal(waitpid(pid, &res->return_code, 0));
+	die_std_error(close(epfd));
+	die_std_error(waitpid(pid, &res->return_code, 0));
 	res->duration_ms = tv_diff_ms(&start_time);
 	res->id = c->id;
-
-	result_print(res);
 error:
 	if (stdin_written != c->stdin_size) {
-		err_fatal(close(stdinfd));
+		die_std_error(close(stdinfd));
 	}
-	err_fatal(close(stdoutfd));
-	err_fatal(close(stderrfd));
+	die_std_error(close(stdoutfd));
+	die_std_error(close(stderrfd));
 
 	return res;
 }
@@ -208,12 +204,12 @@ void command_print(struct command *c) {
 }
 
 //static inline void close_pipe_parent(int fdpair[2]) {
-//	err_fatal(close(fdpair[1]));
+//	die_std_error(close(fdpair[1]));
 //}
 
 static inline void fd_pair_close(int fd[2]) {
-	err_fatal(close(fd[0])); // close parent end
-	err_fatal(close(fd[1])); // close child end
+	die_std_error(close(fd[0])); // close parent end
+	die_std_error(close(fd[1])); // close child end
 }
 
 static inline void fd_pair_child(int fd[2], int dst_fd) {
@@ -225,10 +221,10 @@ static inline void fd_pair_child(int fd[2], int dst_fd) {
 		remote = 1;
 	}
 
-	err_fatal(close(fd[remote])); // close parent end
+	die_std_error(close(fd[remote])); // close parent end
 	if (fd[local] != dst_fd) {
-		err_fatal(dup2(fd[local], dst_fd)); // remap child end
-		err_fatal(close(fd[local]));        // close child end duplicate
+		die_std_error(dup2(fd[local], dst_fd)); // remap child end
+		die_std_error(close(fd[local]));        // close child end duplicate
 	}
 }
 
@@ -242,43 +238,42 @@ struct result *command_execute(struct command *c) {
 	int stderrfd[2];
 	int sfd;
 	sigset_t mask;
-	struct result *res;
+	struct result *res = NULL;
 
-	err_fatal(pipe(stdinfd));
-	err_fatal(pipe(stdoutfd));
-	err_fatal(pipe(stderrfd));
+	die_std_error(pipe(stdinfd));
+	die_std_error(pipe(stdoutfd));
+	die_std_error(pipe(stderrfd));
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
-	err_fatal(sigprocmask(SIG_BLOCK, &mask, NULL));
-	err_fatal(sfd = signalfd(-1, &mask, 0));
+	die_std_error(sigprocmask(SIG_BLOCK, &mask, NULL));
+	die_std_error(sfd = signalfd(-1, &mask, 0));
 
-	pid = fork();
-	if (pid == -1) {
+	log_std_error(pid = fork());
+	switch (pid) {
+	case -1: //Error case
 		fd_pair_close(stdinfd);
 		fd_pair_close(stdoutfd);
 		fd_pair_close(stderrfd);
-		
-		printf("Error in fork()\n");
 		return NULL;
-	}
-	if (pid == 0) {	// Child case
+	case 0:	// Child case
 		fd_pair_child(stdinfd, STDIN_FILENO);
 		fd_pair_child(stdoutfd, STDOUT_FILENO);
 		fd_pair_child(stderrfd, STDERR_FILENO);
 
-		err_fatal(execve(c->command, (char * const *)c->args, environ));
-		// This point is never reached, err_fatal exits in case of
+		die_std_error(execve(c->command, (char * const *)c->args, environ));
+		// This point is never reached, die_std_error exits in case of
 		// execve failure.
+		return NULL;
+	default: // Parent case
+		die_std_error(close(stdinfd[READ_FD]));
+		die_std_error(close(stdoutfd[WRITE_FD]));
+		die_std_error(close(stderrfd[WRITE_FD]));
+		// manage_process is responsible for closing stdin/out/err descriptors
+		res = manage_process(c, pid, stdinfd[WRITE_FD], stdoutfd[READ_FD], stderrfd[READ_FD], sfd);
+		die_std_error(close(sfd));
+		die_std_error(sigprocmask(SIG_UNBLOCK, &mask, NULL));
 	}
-	// Parent case
-	err_fatal(close(stdinfd[READ_FD]));
-	err_fatal(close(stdoutfd[WRITE_FD]));
-	err_fatal(close(stderrfd[WRITE_FD]));
-	// manage_process is responsible for closing stdin/out/err descriptors
-	res = manage_process(c, pid, stdinfd[WRITE_FD], stdoutfd[READ_FD], stderrfd[READ_FD], sfd);
-	err_fatal(close(sfd));
-	err_fatal(sigprocmask(SIG_UNBLOCK, &mask, NULL));
 	
 	return res;
 }

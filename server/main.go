@@ -71,6 +71,7 @@ func RespondJsonObjectCustom(w http.ResponseWriter, o interface{}, indent bool, 
 }
 
 func hello(w http.ResponseWriter, r *http.Request, userID string) {
+	log.Print(r)
 	task := Task{
 		SelepMs: 2000,
 		Exec: &ExecTask{
@@ -83,6 +84,9 @@ func hello(w http.ResponseWriter, r *http.Request, userID string) {
 			WaitTimeMs:       10000,
 			OutputBufferSize: 1024 * 1024,
 		},
+	}
+	if r.Body != nil {
+		r.Body.Close()
 	}
 	RespondJsonObject(w, &task, true)
 }

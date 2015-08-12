@@ -1,4 +1,5 @@
 #include "result.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,22 @@ struct result *result_new(size_t buf_size) {
 		res->stderr_buffer = malloc(buf_size);
 	}
 	return res;
+}
+
+json_t *result_to_json(struct result *res) {
+	json_t *json;
+	json_error_t error;
+
+	json = json_pack_ex(&error, 0, "{s:s, s:i, s:s#, s:s#, s:i}",
+		"id", res->id,
+		"returnCode", res->return_code,
+		"stdout", res->stdout_buffer, res->stdout_size,
+		"stderr", res->stderr_buffer, res->stderr_size,
+		"durationMs", res->duration_ms);
+	if (!json) {
+		log_error("json_pack_ex(): %s\n", error.text);
+	}
+	return json;
 }
 
 void result_print(struct result *res) {
