@@ -15,11 +15,11 @@ import (
 
 type ExecTask struct {
 	ID               string            `json:"id"`
-	DaemonMode       bool              `json:"daemonMode"`
 	Command          string            `json:"command"`
 	Args             []string          `json:"args,omitempty"`
-	WorkDir          string            `json:"workDir,omitempty"`
+	Dir              string            `json:"directory,omitempty"`
 	Environment      map[string]string `json:"environment,omitempty"`
+	CleanEnvironment bool              `json:"cleanEnvironment"`
 	Stdin            string            `json:"stdin,omitempty"`
 	WaitTimeMs       int               `json:"waitTimeMs"`
 	OutputBufferSize int               `json:"outputBufferSize"`
@@ -75,12 +75,13 @@ func hello(w http.ResponseWriter, r *http.Request, userID string) {
 	task := Task{
 		SelepMs: 2000,
 		Exec: &ExecTask{
-			ID:         newUUID(),
-			DaemonMode: false,
-			Command:    "/bin/cat",
-			Args:       []string{"-", "/etc/passwd", "/proc/vmallocinfo"},
-			//Args:             []string{"/etc/passwd", "/proc/vmallocinfo"},
-			Stdin:            "this is \x01 a test\n",
+			ID:               newUUID(),
+			Command:          "/bin/cat",
+			Dir:              "/",
+			Args:             []string{"-", "etc/passwd", "/proc/vmallocinfo", "/proc/self/environ"},
+			Stdin:            "this is \x00 a test\n",
+			Environment:      map[string]string{"XXX": "yyy", "LS_COLORS": ""},
+			CleanEnvironment: true,
 			WaitTimeMs:       10000,
 			OutputBufferSize: 1024 * 1024,
 		},

@@ -8,11 +8,14 @@
 
 struct command {
 	const char   *id;
-	bool          daemon_mode;
 	const char   *command;
 	const char  **args;
 	size_t        arg_num;
-	const char  **environ;
+	const char   *directory;
+	const char  **environ_keys;
+	const char  **environ_vals;
+	size_t        environ_num;
+	int           clean_environ;
 	const char   *stdin_buffer;
 	size_t        stdin_size;
 	// constraints
@@ -20,7 +23,7 @@ struct command {
 	size_t  output_size;
 };
 
-int command_parse(struct command *c, json_t *obj);
-void command_print(struct command *c);
+struct command *command_parse(json_t *obj);
 struct result *command_execute(struct command *c);
+void command_print(struct command *c);
 void command_free(struct command *c);

@@ -22,7 +22,8 @@ struct httprcclient {
 
 	bool graceful_exit;
 
-	CURL *curl;	
+	CURL *curl;
+	char  curl_error_buffer[CURL_ERROR_SIZE];
 };
 
 const char *argp_program_version = PACKAGE_STRING;
@@ -122,6 +123,7 @@ void report_result(struct httprcclient *app, struct result *res) {
 	CURLcode rc;
 	json_t *result_json;
 	char *json_bytes;
+	struct curl_slist *headers = NULL;
 
 	result_json = result_to_json(res);
 	if (!result_json) {
@@ -140,71 +142,85 @@ void report_result(struct httprcclient *app, struct result *res) {
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPGET, 0), "CURLOPT_HTTPGET");
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POST, 1), "CURLOPT_POST");
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POSTFIELDS, json_bytes), "CURLOPT_POSTFIELDS");
+	headers = curl_slist_append(headers, "Content-Type: application/json");
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPHEADER, headers), "CURLOPT_HTTPHEADER");
 
 	curl_easy_setopt(app->curl, CURLOPT_WRITEDATA, NULL);
 	curl_easy_setopt(app->curl, CURLOPT_WRITEFUNCTION, null_write_cb);
 
 	rc = curl_easy_perform(app->curl);
-	printf("curl rc = %d\n", rc);
+	if (rc != CURLE_OK) {
+		log_error("libcurl: %s: %s\n", curl_easy_strerror(rc), app->curl_error_buffer);
+	}
 
+	curl_slist_free_all(headers);
 	free(json_bytes);
 	json_decref(result_json);
 }
 
 int process_response(struct httprcclient *app, struct response_buf *buf, useconds_t *sleep_interval) {
-	json_t *task;
-	const char *key;
-	json_t *value;
+	json_t *task_blob;
+	json_t *cmd_blob = NULL;
 	json_error_t error;
 
-	struct command c;
+	struct command *c;
 	struct result *res;
 	json_int_t sleep_ms = 0;
 
-	json_t *result_j;
-
 	memset(&c, 0, sizeof(c));
 
-	task = json_loadb(buf->start, buf->size, JSON_ALLOW_NUL, &error);
-	if (!task) {
+	task_blob = json_loadb(buf->start, buf->size, JSON_ALLOW_NUL, &error);
+	if (!task_blob) {
 		fprintf(stderr, PACKAGE_NAME ": jansson: %s\n", error.text);
 		goto error_load;
 	}
 
-	if (!json_is_object(task)) {
+	if (json_unpack_ex(task_blob, &error, 0, "{s:i, s?:o}", "sleepMs", &sleep_ms, "exec", &cmd_blob) != 0) {
+		fprintf(stderr, PACKAGE_NAME ": jansson: %s\n", error.text);
 		goto end;
 	}
-	json_object_foreach(task, key, value) {
-		if (strcmp(key, "sleepMs") == 0 && json_is_integer(value)) {
-			sleep_ms = json_integer_value(value);
-			*sleep_interval = sleep_ms * 1000;
-		} else if (strcmp(key, "exec") == 0 && json_is_object(value)) {
-			command_parse(&c, value);
-			res = command_execute(&c);
-			if (res) {
-				report_result(app, res);
-			}
-			command_free(&c);
-			result_free(res);
-		}
+	*sleep_interval = sleep_ms * 1000;
+	if (!cmd_blob) {
+		goto end;
 	}
 
+	c = command_parse(cmd_blob);
+	if (!c) {
+		goto end;
+	}
+	command_print(c);
+
+	res = command_execute(c);
+	if (res) {
+		result_print(res);
+		report_result(app, res);
+		result_free(res);
+	}
+
+	command_free(c);
 end:
-	json_decref(task);
+	json_decref(task_blob);
 error_load:
 	return 0;
 }
 
 void main_loop(struct httprcclient *app) {
-	CURLcode res;
+	CURLcode rc;
 	useconds_t sleep_interval;
 	struct response_buf *buf;
 
 	buf = response_buf_new();
 
-	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_CAINFO, app->ca_cert), "CURLOPT_CAINFO");
-	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLCERT, app->client_cert), "CURLOPT_SSLCERT");
-	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLKEY, app->client_key), "CURLOPT_SSLKEY");
+	if (app->ca_cert) {
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_CAINFO, app->ca_cert), "CURLOPT_CAINFO");
+	}
+	if (app->client_cert) {
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLCERT, app->client_cert), "CURLOPT_SSLCERT");
+	}
+	if (app->client_key) {
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLKEY, app->client_key), "CURLOPT_SSLKEY");
+	}
+	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_ERRORBUFFER, app->curl_error_buffer), "CURLOPT_SSLKEY");
 
 
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_URL, app->backend_url), "CURLOPT_URL");
@@ -214,14 +230,15 @@ void main_loop(struct httprcclient *app) {
 
 		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POST, 0), "CURLOPT_POST");
 		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POSTFIELDS, NULL), "CURLOPT_POSTFIELDS");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPHEADER, NULL), "CURLOPT_HTTPHEADER");
 		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPGET, 1), "CURLOPT_HTTPGET");
 
 		curl_easy_setopt(app->curl, CURLOPT_WRITEDATA, buf);
 		curl_easy_setopt(app->curl, CURLOPT_WRITEFUNCTION, response_buf_write_cb);
 
-		res = curl_easy_perform(app->curl);
-		if (res != CURLE_OK) {
-			log_error("libcurl: %s\n", curl_easy_strerror(res));
+		rc = curl_easy_perform(app->curl);
+		if (rc != CURLE_OK) {
+			log_error("libcurl: %s: %s\n", curl_easy_strerror(rc), app->curl_error_buffer);
 			goto skip;
 		}
 

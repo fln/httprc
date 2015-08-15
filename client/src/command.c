@@ -14,42 +14,60 @@
 
 extern char **environ;
 
-int command_parse(struct command *c, json_t *obj) {
-	const char *key;
+struct command *command_parse(json_t *obj) {
+	struct command *c;
+	json_t *args_blob = NULL;
+	json_t *environ_blob = NULL;
 	json_t *value;
-	json_t *str_value;
 	size_t index;
+	const char *key;
+	json_error_t error;
 
 	// Set default values
-	memset(c, 0, sizeof(*c));
+	c = calloc(1, sizeof(*c));
+	if (!c) {
+		return NULL;
+	}
 
-	json_object_foreach(obj, key, value) {
-		if (strcmp(key, "id") == 0 && json_is_string(value)) {
-			c->id = json_string_value(value);
-		} else if (strcmp(key, "command") == 0 && json_is_string(value)) {
-			c->command = json_string_value(value);
-		} else if (strcmp(key, "args") == 0 && json_is_array(value)) {
-			// Include 2 extra args for argv[0] and NULL
-			c->args = calloc(json_array_size(value) + 2, sizeof(*c->args));
-			c->arg_num += 1;
-			json_array_foreach(value, index, str_value) {
-				if (json_is_string(str_value)) {
-					c->args[c->arg_num++] = json_string_value(str_value);
-				}
+	if (json_unpack_ex(obj, &error, 0,
+		"{s:s, s:s, s?:o, s?:s, s?:s%, s?:o, s?:b, s?:i, s?:i}",
+		"id", &c->id,
+		"command", &c->command,
+		"args", &args_blob,
+		"directory", &c->directory,
+		"stdin", &c->stdin_buffer, &c->stdin_size,
+		"environment", &environ_blob,
+		"cleanEnvironment", &c->clean_environ,
+		"outputBufferSize", &c->output_size,
+		"waitTimeMs", &c->wait_time_ms
+	)) {
+		fprintf(stderr, PACKAGE_NAME ": jansson: %s\n", error.text);
+		goto error;
+	}
+
+	if (args_blob && json_is_array(args_blob)) {
+		// Include 2 extra args for argv[0] and NULL
+		c->args = calloc(json_array_size(args_blob) + 2, sizeof(*c->args));
+		c->arg_num += 1;
+		json_array_foreach(args_blob, index, value) {
+			if (json_is_string(value)) {
+				c->args[c->arg_num++] = json_string_value(value);
 			}
-		} else if (strcmp(key, "stdin") == 0 && json_is_string(value)) {
-			c->stdin_size = json_string_length(value);
-			c->stdin_buffer = json_string_value(value);
-		} else if (strcmp(key, "outputBufferSize") == 0 && json_is_integer(value)) {
-			c->output_size = json_integer_value(value);
-		} else if (strcmp(key, "waitTimeMs") == 0 && json_is_integer(value)) {
-			c->wait_time_ms = json_integer_value(value);
 		}
 	}
 
-	if (!c->command) {
-		return -1;
+	if (environ_blob && json_is_object(environ_blob) && json_object_size(environ_blob) > 0) {
+		c->environ_keys = calloc(json_object_size(environ_blob), sizeof(*c->environ_keys));
+		c->environ_vals = calloc(json_object_size(environ_blob), sizeof(*c->environ_vals));
+		json_object_foreach(environ_blob, key, value) {
+			if (json_is_string(value)) {
+				c->environ_keys[c->environ_num] = key;
+				c->environ_vals[c->environ_num] = json_string_value(value);
+				c->environ_num += 1;
+			}
+		}
 	}
+
 	if (!c->args) {
 		c->args = calloc(2, sizeof(*c->args));
 	}
@@ -60,7 +78,10 @@ int command_parse(struct command *c, json_t *obj) {
 		c->wait_time_ms = 10*1000; // Default wait time is 10 sec.
 	}
 	c->args[0] = c->command;
-	return 0;
+	return c;
+error:
+	command_free(c);
+	return NULL;
 }
 
 static int tv_diff_ms(struct timeval *start) {
@@ -91,6 +112,8 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 	}
 
 	die_std_error(epfd = epoll_create1(0));
+
+	memset(&ev, 0, sizeof(ev));
 
 	ev.events = EPOLLOUT;
 	ev.data.fd = stdinfd;
@@ -189,23 +212,23 @@ void command_print(struct command *c) {
 
 	printf("--- Command ---\n");
 	printf("\tId:          %s\n", c->id);
-	printf("\tDaemon mode: %d\n", c->daemon_mode);
 	printf("\tCmd:         %s\n", c->command);
-	printf("\tStdin[%zu]:  ", c->stdin_size);
+	printf("\tDirectory:   %s\n", c->directory);
+	for (i = 0; i < c->arg_num; i++) {
+		printf("\tArg[%d]:      %s\n", i, c->args[i]);
+	}
+	for (i = 0; i < c->environ_num; i++) {
+		printf("\tEnvironment: %s=%s\n", c->environ_keys[i], c->environ_vals[i]);
+	}
+	printf("\tClean env.:  %s\n", c->clean_environ ? "true" : "false");
+	printf("\tStdin[%zu]:   0x", c->stdin_size);
 	for (i = 0; i < c->stdin_size; i += 1) {
 		printf("%02x", c->stdin_buffer[i]);
 	}
 	printf("\n");
-	for (i = 0; i < c->arg_num; i++) {
-		printf("\tArg[%d]: %s\n", i, c->args[i]);
-	}
-	printf("\tWait time: %d\n", c->wait_time_ms);
-	printf("\tOutput size: %zu\n", c->output_size);
+	printf("\tWait time:   %d ms\n", c->wait_time_ms);
+	printf("\tOutput size: %zu bytes\n", c->output_size);
 }
-
-//static inline void close_pipe_parent(int fdpair[2]) {
-//	die_std_error(close(fdpair[1]));
-//}
 
 static inline void fd_pair_close(int fd[2]) {
 	die_std_error(close(fd[0])); // close parent end
@@ -239,13 +262,14 @@ struct result *command_execute(struct command *c) {
 	int sfd;
 	sigset_t mask;
 	struct result *res = NULL;
+	int i;
 
 	die_std_error(pipe(stdinfd));
 	die_std_error(pipe(stdoutfd));
 	die_std_error(pipe(stderrfd));
 
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGCHLD);
+	die_std_error(sigemptyset(&mask));
+	die_std_error(sigaddset(&mask, SIGCHLD));
 	die_std_error(sigprocmask(SIG_BLOCK, &mask, NULL));
 	die_std_error(sfd = signalfd(-1, &mask, 0));
 
@@ -261,10 +285,22 @@ struct result *command_execute(struct command *c) {
 		fd_pair_child(stdoutfd, STDOUT_FILENO);
 		fd_pair_child(stderrfd, STDERR_FILENO);
 
+		if (c->directory) {
+			die_std_error(chdir(c->directory));
+		}
+
+		if (c->clean_environ) {
+			clearenv();
+		}
+
+		for (i = 0; i < c->environ_num; i += 1) {
+			die_std_error(setenv(c->environ_keys[i], c->environ_vals[i], 1));
+		}
+
 		die_std_error(execve(c->command, (char * const *)c->args, environ));
 		// This point is never reached, die_std_error exits in case of
 		// execve failure.
-		return NULL;
+		exit(EXIT_FAILURE);
 	default: // Parent case
 		die_std_error(close(stdinfd[READ_FD]));
 		die_std_error(close(stdoutfd[WRITE_FD]));
@@ -279,5 +315,10 @@ struct result *command_execute(struct command *c) {
 }
 
 void command_free(struct command *c) {
-	free(c->args);
+	if (c) {
+		free(c->args);
+		free(c->environ_keys);
+		free(c->environ_vals);
+		free(c);
+	}
 }
