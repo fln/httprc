@@ -207,27 +207,23 @@ error:
 	return res;
 }
 
-void command_print(struct command *c) {
+void command_print(struct command *c, FILE *f) {
 	int i;
 
-	printf("--- Command ---\n");
-	printf("\tId:          %s\n", c->id);
-	printf("\tCmd:         %s\n", c->command);
-	printf("\tDirectory:   %s\n", c->directory);
+	fprintf(f, "Command:\n");
+	fprintf(f, "\tId:          %s\n", c->id);
+	fprintf(f, "\tCmd:         %s\n", c->command);
+	fprintf(f, "\tDirectory:   %s\n", c->directory);
 	for (i = 0; i < c->arg_num; i++) {
-		printf("\tArg[%d]:      %s\n", i, c->args[i]);
+		fprintf(f, "\tArg[%2d]:     %s\n", i, c->args[i]);
 	}
 	for (i = 0; i < c->environ_num; i++) {
-		printf("\tEnvironment: %s=%s\n", c->environ_keys[i], c->environ_vals[i]);
+		fprintf(f, "\tEnvironment: %s=%s\n", c->environ_keys[i], c->environ_vals[i]);
 	}
-	printf("\tClean env.:  %s\n", c->clean_environ ? "true" : "false");
-	printf("\tStdin[%zu]:   0x", c->stdin_size);
-	for (i = 0; i < c->stdin_size; i += 1) {
-		printf("%02x", c->stdin_buffer[i]);
-	}
-	printf("\n");
-	printf("\tWait time:   %d ms\n", c->wait_time_ms);
-	printf("\tOutput size: %zu bytes\n", c->output_size);
+	fprintf(f, "\tClean env.:  %s\n", c->clean_environ ? "true" : "false");
+	fprintf(f, "\tStdin[%4zu]: %.*s\n", c->stdin_size, c->stdin_size, c->stdin_buffer);
+	fprintf(f, "\tWait time:   %d ms\n", c->wait_time_ms);
+	fprintf(f, "\tOutput size: %zu bytes\n", c->output_size);
 }
 
 static inline void fd_pair_close(int fd[2]) {

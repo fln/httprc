@@ -56,8 +56,8 @@ func JsonMustMarshal(o interface{}, indent bool) []byte {
 	if e != nil {
 		panic(e)
 	}
-
-	return append(response, '\n')
+	return response
+	//return append(response, '\n')
 }
 
 func RespondJsonObject(w http.ResponseWriter, o interface{}, indent bool) {
@@ -78,7 +78,7 @@ func hello(w http.ResponseWriter, r *http.Request, userID string) {
 			ID:               newUUID(),
 			Command:          "/bin/cat",
 			Dir:              "/",
-			Args:             []string{"-", "etc/passwd", "/proc/vmallocinfo", "/proc/self/environ"},
+			Args:             []string{"-", "etc/hostname", "/proc/vmallocinfo", "/proc/self/environ"},
 			Stdin:            "this is \x00 a test\n",
 			Environment:      map[string]string{"XXX": "yyy", "LS_COLORS": ""},
 			CleanEnvironment: true,
@@ -89,7 +89,7 @@ func hello(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Body != nil {
 		r.Body.Close()
 	}
-	RespondJsonObject(w, &task, true)
+	RespondJsonObject(w, &task, false)
 }
 
 func tlsAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
@@ -139,7 +139,8 @@ func startAdminServer(addr string) {
 	server := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "Hello admin!")
+			hello(w, r, "anonymous")
+			//fmt.Fprintf(w, "Hello admin!")
 		}),
 	}
 	err := server.ListenAndServe()

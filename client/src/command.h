@@ -25,5 +25,5 @@ struct command {
 
 struct command *command_parse(json_t *obj);
 struct result *command_execute(struct command *c);
-void command_print(struct command *c);
+void command_print(struct command *c, FILE *f);
 void command_free(struct command *c);

@@ -20,6 +20,7 @@ struct httprcclient {
 	char *client_key;
 	char *backend_url;
 
+	bool verbose;
 	bool graceful_exit;
 
 	CURL *curl;
@@ -36,6 +37,7 @@ execute.\vFIXME ?.";
 static struct httprcclient *_app;
 
 static struct argp_option options[] = {
+	{"verbose",     'v', 0,      0, "Show received and transmitted JSON blobs."},
 	{"ca-cert",     'a', "FILE", 0, "CA certificate to check backend certificate against." },
 	{"client-cert", 'c', "FILE", 0, "Client certificate (used to authenticate to the backend server)." },
 	{"client-key",  'k', "FILE", 0, "Client private key (used to authenticate to the backend server)." },
@@ -67,6 +69,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	app = (struct httprcclient *)state->input;
 
 	switch(key) {
+	case 'v':
+		app->verbose = true;
+		break;
 	case 'a':
 		app->ca_cert = arg;
 		break;
@@ -82,15 +87,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	case ARGP_KEY_END:
 		if (!app->backend_url) {
 			argp_failure(state, 1, 0, "Backend URL is missing");
-		}
-		if (!app->ca_cert) {
-			argp_failure(state, 1, 0, "Option --ca-cert is mandatory.");
-		}
-		if (!app->client_cert) {
-			argp_failure(state, 1, 0, "Option --client-cert is mandatory.");
-		}
-		if (!app->client_key) {
-			argp_failure(state, 1, 0, "Option --client-cert is mandatory.");
 		}
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -130,14 +126,14 @@ void report_result(struct httprcclient *app, struct result *res) {
 		return;
 	}
 
-	json_bytes = json_dumps(result_json, JSON_INDENT(2) | JSON_ENSURE_ASCII);
+	json_bytes = json_dumps(result_json, JSON_ENSURE_ASCII);
 	if (!json_bytes) {
 		return;
 	}
 
-	printf("--------- TX ---------\n");
-	printf("%s\n", json_bytes);
-
+	if (app->verbose) {
+		printf("TX: %s\n", json_bytes);
+	}
 
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_HTTPGET, 0), "CURLOPT_HTTPGET");
 	curlc_filter(curl_easy_setopt(app->curl, CURLOPT_POST, 1), "CURLOPT_POST");
@@ -188,11 +184,15 @@ int process_response(struct httprcclient *app, struct response_buf *buf, usecond
 	if (!c) {
 		goto end;
 	}
-	command_print(c);
+	//if (app->verbose) {
+	//	command_print(c, stdout);
+	//}
 
 	res = command_execute(c);
 	if (res) {
-		result_print(res);
+		//if (app->verbose) {
+		//	result_print(res, stdout);
+		//}
 		report_result(app, res);
 		result_free(res);
 	}
@@ -242,8 +242,9 @@ void main_loop(struct httprcclient *app) {
 			goto skip;
 		}
 
-		printf("--------- RX ---------\n");
-		printf("%.*s\n", (int)buf->size, buf->start);
+		if (app->verbose) {
+			printf("RX: %.*s\n", (int)buf->size, buf->start);
+		}
 		process_response(app, buf, &sleep_interval);
 skip:
 		usleep(sleep_interval);

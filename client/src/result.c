@@ -31,13 +31,13 @@ json_t *result_to_json(struct result *res) {
 	return json;
 }
 
-void result_print(struct result *res) {
-	printf("--- Result ---\n");
-	printf("\tId:          %s\n", res->id);
-	printf("\tReturn code: %d\n", res->return_code);
-	printf("\tDuration:    %d ms\n", res->duration_ms);
-	printf("\tStdout[%zu]: %.*s\n", res->stdout_size, (int)res->stdout_size, res->stdout_buffer);
-	printf("\tStderr[%zu]: %.*s\n", res->stderr_size, (int)res->stderr_size, res->stderr_buffer);
+void result_print(struct result *res, FILE *f) {
+	fprintf(f, "Result:\n");
+	fprintf(f, "\tId:          %s\n", res->id);
+	fprintf(f, "\tReturn code: %d\n", res->return_code);
+	fprintf(f, "\tDuration:    %d ms\n", res->duration_ms);
+	fprintf(f, "\tStdout[%zu]: %.*s\n", res->stdout_size, (int)res->stdout_size, res->stdout_buffer);
+	fprintf(f, "\tStderr[%zu]: %.*s\n", res->stderr_size, (int)res->stderr_size, res->stderr_buffer);
 }
 
 void result_free(struct result *res) {

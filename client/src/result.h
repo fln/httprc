@@ -15,5 +15,5 @@ struct result {
 
 struct result *result_new(size_t buf_size);
 json_t *result_to_json(struct result *res);
-void result_print(struct result *res);
+void result_print(struct result *res, FILE *f);
 void result_free(struct result *res);
