@@ -22,7 +22,7 @@ string.
 be used as CN in the certificate.
 
 Generated certificate details can be fine tuned by editing config files ca.cfg,
-server.cfg and client.cfd acordingly. Please note that client.cfg is a template
+server.cfg and client.cfd accordingly. Please note that client.cfg is a template
 for client certificate config.
 
 Requesting to generate a certificate without first generating a public/private

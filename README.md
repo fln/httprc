@@ -17,17 +17,19 @@ General system architecture
 ---------------------------
 
 System architecture is based on the idea that client application behaviour must
-be releatively simple and stricyly defined. Client must periodically send HTTP
+be relatively simple and strictly defined. Client must periodically send HTTP
 request to a predefined server URL. Response for this request includes a time to
-wait before making next request and optionaly a command to be executed on the
-client. If command was executed client must inform the server about command
-execution result.
+wait before making next request and optionally a command to be executed on the
+client. When command is executed client must inform the server about execution
+results by generating POST request to the same predefined server URL.
+
+Data exchanged between server and client is encoded using JSON.
 
 Client/Server Authentication
 ----------------------------
 
 Httprc system uses x509 PKI and TLS for mutual client-server and server-client
-authorization. Each client must have private key and certificate signed by the
+authentication. Each client must have private key and certificate signed by the
 CA that server trust, and server must have a private key and certificate signed
 by the CA trusted by the clients.
 
