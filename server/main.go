@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -14,14 +13,26 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type Client struct {
+	sync.RWMutex
+	PendingTasks  []Command
+	FinishedTasks []FinishedTask
+	LastSeen      struct {
+		Time time.Time
+		IP   string
+	}
+}
+
+type FinishedTask struct {
+	Command Command
+	Result  Result
+}
+
 type RCServer struct {
-	LastSeen         map[string]time.Time
-	LastSeenLock     sync.RWMutex
-	PendingTasks     map[string][]Command
-	PendingTasksLock sync.RWMutex
-	FinishedTasks    map[string][]Result
-	server           *http.Server
-	adminServer      *http.Server
+	ClientMap     map[string]*Client
+	ClientMapLock sync.RWMutex
+	server        *http.Server
+	adminServer   *http.Server
 }
 
 type Result struct {
@@ -90,7 +101,8 @@ func (app *RCServer) startTLSAuth(addr string, certFile string, keyFile string, 
 		Handler: router,
 	}
 
-	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.getTask))
+	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.clientGetTask)).Methods("GET")
+	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.clientPostTask)).Methods("POST")
 
 	// Enable client authentication
 	if caFile != "" {
@@ -120,10 +132,9 @@ func (app *RCServer) startAdminServer(addr string) {
 		Handler: router,
 	}
 
-	router.HandleFunc("/v1/httprc/presence", app.clientPresence)
-	router.HandleFunc("/v1/httprc", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello admin!")
-	})
+	router.HandleFunc("/v1/httprc/clientList", app.adminClientList).Methods("GET")
+	router.HandleFunc("/v1/httprc/client/{clientID}", app.adminClientGet).Methods("GET")
+	router.HandleFunc("/v1/httprc/client/{clientID}/task", app.adminAddTask).Methods("POST")
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 	err := app.adminServer.ListenAndServe()
 	log.Fatal(err)
@@ -149,9 +160,7 @@ func main() {
 	}
 
 	app := RCServer{
-		LastSeen:      make(map[string]time.Time),
-		PendingTasks:  make(map[string][]Command),
-		FinishedTasks: make(map[string][]Result),
+		ClientMap: make(map[string]*Client),
 	}
 
 	go app.startTLSAuth(":8989", *serverCertFile, *serverKeyFile, *clientCACertFile)

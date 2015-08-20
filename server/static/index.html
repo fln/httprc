@@ -9,21 +9,47 @@
 
 	<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
 	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.1.3/mustache.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/3.0.3/handlebars.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.min.js"></script>
 
 
 	<script>
-		//use strict;
-		$(function() {
-			$.ajax({
-				url: "/v1/httprc/presence",
-				type: "GET",
-			}).success(function (data) {
-				var html = Mustache.render($('#presence-tmpl').html(), data);
-				$('#presence').html(html);
-				console.log(data);
-			});
-		});
+var clientMap = {};
+
+
+function load_client() {
+	var clientID = $(this).attr('data-id');
+	$.ajax({
+		url: "v1/httprc/client/" + clientID,
+		type: "GET"
+	}).success(function (data) {
+		data.clientID = clientID;
+		console.log(data);
+		var html = Handlebars.compile($('#client-tmpl').html())(data);
+		$('#client-info').html(html);
+	});
+}
+
+function load_presence() {
+	$.ajax({
+		url: "v1/httprc/clientList",
+		type: "GET",
+	}).success(function (data) {
+		
+		var html = Handlebars.compile($('#presence-tmpl').html())(data);
+		$('#presence').html(html);
+		$('.choose-client').on('click', load_client);
+	});
+
+}
+
+$(function() {
+	Handlebars.registerHelper('reltime', function(time) {
+		return moment(time).fromNow();
+	});
+	load_presence();
+
+});
 	</script>
 </head>
 
@@ -31,16 +57,80 @@
 	<div class="container">
 		<div class="row">
 			<div class="col-xs-9">
-			ok
+<div class="row" id="client-info">
+</div>
+<div class="row">
+	<h3>Command execution log</h3>
+</div>
+<div class="row">
+	<h3>Command execution schedule</h3>
+</div>
+<div class="row">
+<h3>Schedule new command execution</h3>
+<form>
+	<div class="form-group">
+		<label for="command">Command</label>
+		<input type="text" class="form-control" id="command" placeholder="Command">
+	</div>
+	<div class="form-group">
+		<label for="stdin">Stdin</label>
+		<textarea class="form-control" id="stdin" rows="3"></textarea>
+	</div>
+	<div class="form-group">
+	</div>
+	<div class="radio">
+		<label>
+			<input type="radio" name="cleanEnvironment" value="">Use default environment
+		</label>
+		<label>
+			<input type="radio" name="cleanEnvironment" value="false">Append to current environment
+		</label>
+		<label>
+			<input type="radio" name="cleanEnvironment" value="true">Replace existing environment
+		</label>
+	</div>
+	<div class="form-group">
+		<label for="waitTime">Wait time</label>
+		<input type="text" class="form-control" id="waitTimeMs" placeholder="Max execution time in ms" value="10000">
+	</div>
+	<div class="form-group">
+		<label for="outputBufferSize">Output buffer size</label>
+		<input type="text" class="form-control" id="outputBufferSize" placeholder="Output buffer size in bytes" value="1048576">
+	</div>
+
+	<button type="submit" class="btn btn-default">Schedule</button>
+</form>
+</div>
 			</div>
 			<div class="col-xs-3" id="presence"></div>
 		</div>
 	</div>
 
-<script id="presence-tmpl" type="x-tmpl-mustache">
-{{#.}}
-{{.}}
-{{/.}}
+<script id="presence-tmpl" type="text/x-handlebars-template">
+Available devices:
+<ul>
+{{#each .}}
+	<li><a href="#" data-id="{{this}}" class="choose-client">{{this}}</a></li>
+{{/each}}
+</ul>
+</script>
+
+<script id="client-tmpl" type="text/x-handlebars-template">
+Client ID: {{clientID}}
+Last seen: {{LastSeen.Time}}
+IP: {{LastSeen.IP}}
+</script>
+
+<script id="command-tmpl" type="text/x-handlebars-template">
+<div>
+Command:
+ID: {{.id}}
+Command: {{.command}}
+Args: {{#each .args}}
+    {{this}}
+{{/each .args}}
+</ul>
+</div>
 </script>
 
 </body>

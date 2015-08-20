@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 )
@@ -55,4 +56,16 @@ func RespondErrorCode(w http.ResponseWriter, code int) {
 	} else {
 		http.Error(w, strconv.Itoa(code)+" "+http.StatusText(code), code)
 	}
+}
+
+func RequestJsonToStruct(r *http.Request, dest interface{}) error {
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	if err = json.Unmarshal(data, dest); err != nil {
+		return err
+	}
+	return nil
 }
