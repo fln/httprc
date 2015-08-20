@@ -1,95 +1,52 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
+	"time"
+
+	"github.com/gorilla/mux"
 )
 
-type ExecTask struct {
+type RCServer struct {
+	LastSeen         map[string]time.Time
+	LastSeenLock     sync.RWMutex
+	PendingTasks     map[string][]Command
+	PendingTasksLock sync.RWMutex
+	FinishedTasks    map[string][]Result
+	server           *http.Server
+	adminServer      *http.Server
+}
+
+type Result struct {
+	ID         string `json:"id"`
+	ReturnCode int    `json:"returnCode"`
+	Stdout     string `json:"stdout"`
+	Stderr     string `json:"stderr"`
+	DurationMs int    `json:"durationMs"`
+}
+
+type Command struct {
 	ID               string            `json:"id"`
 	Command          string            `json:"command"`
 	Args             []string          `json:"args,omitempty"`
 	Dir              string            `json:"directory,omitempty"`
 	Environment      map[string]string `json:"environment,omitempty"`
-	CleanEnvironment bool              `json:"cleanEnvironment"`
+	CleanEnvironment bool              `json:"cleanEnvironment,omitempty"`
 	Stdin            string            `json:"stdin,omitempty"`
 	WaitTimeMs       int               `json:"waitTimeMs"`
 	OutputBufferSize int               `json:"outputBufferSize"`
 }
 
 type Task struct {
-	SelepMs int       `json:"sleepMs"`
-	Exec    *ExecTask `json:"exec,omitempty"`
-}
-
-func newUUID() string {
-	uuid := make([]byte, 16)
-	n, err := io.ReadFull(rand.Reader, uuid)
-	if n != len(uuid) || err != nil {
-		panic(err)
-	}
-	// variant bits; see section 4.1.1
-	uuid[8] = uuid[8]&^0xc0 | 0x80
-	// version 4 (pseudo-random); see section 4.1.3
-	uuid[6] = uuid[6]&^0xf0 | 0x40
-	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
-}
-
-func JsonMustMarshal(o interface{}, indent bool) []byte {
-	var response []byte
-	var e error
-
-	if indent {
-		response, e = json.MarshalIndent(o, "", "\t")
-	} else {
-		response, e = json.Marshal(o)
-	}
-
-	if e != nil {
-		panic(e)
-	}
-	return response
-	//return append(response, '\n')
-}
-
-func RespondJsonObject(w http.ResponseWriter, o interface{}, indent bool) {
-	RespondJsonObjectCustom(w, o, indent, 200)
-}
-
-func RespondJsonObjectCustom(w http.ResponseWriter, o interface{}, indent bool, code int) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(code)
-	w.Write(JsonMustMarshal(o, indent))
-}
-
-func hello(w http.ResponseWriter, r *http.Request, userID string) {
-	log.Print(r)
-	task := Task{
-		SelepMs: 2000,
-		Exec: &ExecTask{
-			ID:               newUUID(),
-			Command:          "/bin/cat",
-			Dir:              "/",
-			Args:             []string{"-", "etc/hostname", "/proc/vmallocinfo", "/proc/self/environ"},
-			Stdin:            "this is \x00 a test\n",
-			Environment:      map[string]string{"XXX": "yyy", "LS_COLORS": ""},
-			CleanEnvironment: true,
-			WaitTimeMs:       10000,
-			OutputBufferSize: 1024 * 1024,
-		},
-	}
-	if r.Body != nil {
-		r.Body.Close()
-	}
-	RespondJsonObject(w, &task, false)
+	SelepMs int      `json:"sleepMs"`
+	Exec    *Command `json:"exec,omitempty"`
 }
 
 func tlsAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
@@ -109,48 +66,73 @@ func tlsAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
 				cn = cert.Subject.CommonName
 			}
 		}
+		clientID := mux.Vars(r)["clientID"]
+		log.Printf("tlsAuth, CN: %s, clientID: %s", cn, clientID)
 		if cn != "" {
 			f(w, r, cn)
+		} else {
+			RespondErrorCode(w, 401)
 		}
 	})
 }
 
-func startClientServer(addr string, caFile string, certFile string, keyFile string) {
-	server := &http.Server{
+//func (app *RCServer) startSimple(addr string) {
+//}
+
+//func (app *RCServer) startTLS(addr string, certFile string, keyFile string) {
+//}
+
+func (app *RCServer) startTLSAuth(addr string, certFile string, keyFile string, caFile string) {
+	var err error
+	router := mux.NewRouter()
+	app.server = &http.Server{
 		Addr:    addr,
-		Handler: tlsAuth(hello),
-		TLSConfig: &tls.Config{
+		Handler: router,
+	}
+
+	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.getTask))
+
+	// Enable client authentication
+	if caFile != "" {
+		app.server.TLSConfig = &tls.Config{
 			ClientAuth: tls.RequireAndVerifyClientCert,
 			ClientCAs:  x509.NewCertPool(),
-		},
+		}
+		if caPEM, err := ioutil.ReadFile(caFile); err != nil {
+			log.Fatal(err)
+		} else {
+			app.server.TLSConfig.ClientCAs.AppendCertsFromPEM(caPEM)
+		}
 	}
 
-	if caPEM, err := ioutil.ReadFile(caFile); err != nil {
-		log.Fatal(err)
+	if certFile != "" && keyFile != "" {
+		err = app.server.ListenAndServeTLS(certFile, keyFile)
 	} else {
-		server.TLSConfig.ClientCAs.AppendCertsFromPEM(caPEM)
+		err = app.server.ListenAndServe()
 	}
-
-	err := server.ListenAndServeTLS(certFile, keyFile)
 	log.Fatal(err)
 }
 
-func startAdminServer(addr string) {
-	server := &http.Server{
-		Addr: addr,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			hello(w, r, "anonymous")
-			//fmt.Fprintf(w, "Hello admin!")
-		}),
+func (app *RCServer) startAdminServer(addr string) {
+	router := mux.NewRouter()
+	app.adminServer = &http.Server{
+		Addr:    addr,
+		Handler: router,
 	}
-	err := server.ListenAndServe()
+
+	router.HandleFunc("/v1/httprc/presence", app.clientPresence)
+	router.HandleFunc("/v1/httprc", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Hello admin!")
+	})
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
+	err := app.adminServer.ListenAndServe()
 	log.Fatal(err)
 }
 
 func main() {
-	clientCACertFile := flag.String("clientCA", "", "Path to file with CA certificate used to authenticate clients")
-	serverCertFile := flag.String("serverCert", "", "Path to client facing server certificate")
-	serverKeyFile := flag.String("serverKey", "", "Path to client facing server private key")
+	clientCACertFile := flag.String("ca-cert", "", "Enable client authentication using specified CA certificate")
+	serverCertFile := flag.String("server-cert", "", "Server certificate for TLS mode")
+	serverKeyFile := flag.String("server-key", "", "Server private key for TLS mode")
 
 	flag.Parse()
 
@@ -165,7 +147,14 @@ func main() {
 	if *serverKeyFile == "" {
 		log.Fatal("Missing \"serverKey\" flag")
 	}
-	go startClientServer(":8989", *clientCACertFile, *serverCertFile, *serverKeyFile)
-	go startAdminServer(":8889")
+
+	app := RCServer{
+		LastSeen:      make(map[string]time.Time),
+		PendingTasks:  make(map[string][]Command),
+		FinishedTasks: make(map[string][]Result),
+	}
+
+	go app.startTLSAuth(":8989", *serverCertFile, *serverKeyFile, *clientCACertFile)
+	go app.startAdminServer(":8889")
 	select {}
 }
