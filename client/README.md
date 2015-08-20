@@ -63,20 +63,20 @@ $ httprcclient http://backend.example.net/{client_id}
 Example using server authentication only:
 
 ```bash
-$ httprcclient --ca-cert /path/to/ca.pem https://backend.example.net/{client_id}
+$ httprcclient --server-ca /path/to/ca.pem https://backend.example.net/{client_id}
 ```
 
 Example using mutual authentication
 
 ```bash
-$ httprcclient --ca-cert /path/to/ca.pem --client-cert /path/to/client.pem --client-key /path/to.client.key https://backend.example.net/{client_id}
+$ httprcclient --server-ca /path/to/ca.pem --client-cert /path/to/client.pem --client-key /path/to.client.key https://backend.example.net/{client_id}
 ```
 
 Summary of available arguments:
 
 | Argument           | Description                                                                   |
 |--------------------|-------------------------------------------------------------------------------|
-| --ca-cert FILE     | Path to CA certificate. Used to authenticate server.                          |
+| --server-ca FILE   | Path to CA certificate. Used to authenticate server.                          |
 | --client-cert FILE | Path to client certificate. Used for client authentication.                   |
 | --client-key FILE  | Path to client private key. Used for client authentication.                   |
 | --verbose          | Enable verbose mode. Show received and transmitted JSON blobs.                |

@@ -28,17 +28,17 @@ struct httprcclient {
 };
 
 const char *argp_program_version = PACKAGE_STRING;
-const char *argp_program_bug_address = PACKAGE_BUGREPORT;
+const char *argp_program_bug_address = "<" PACKAGE_BUGREPORT ">";
 static char args_doc[] = "BACKEND_URL";
 static char doc[] =
-"Remote command execution periodically check backend URL for commands to \
-execute.\vFIXME ?.";
+"Service for remote command execution. It periodically checks backend URL for \
+commands to execute.";
 
 static struct httprcclient *_app;
 
 static struct argp_option options[] = {
 	{"verbose",     'v', 0,      0, "Show received and transmitted JSON blobs."},
-	{"ca-cert",     'a', "FILE", 0, "CA certificate to check backend certificate against." },
+	{"server-ca",   'a', "FILE", 0, "CA certificate to check backend certificate against." },
 	{"client-cert", 'c', "FILE", 0, "Client certificate (used to authenticate to the backend server)." },
 	{"client-key",  'k', "FILE", 0, "Client private key (used to authenticate to the backend server)." },
 	{ NULL },
@@ -87,6 +87,12 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	case ARGP_KEY_END:
 		if (!app->backend_url) {
 			argp_failure(state, 1, 0, "Backend URL is missing");
+			break;
+		}
+		if (strncasecmp(app->backend_url, "https", 5) == 0) {
+			if (!app->ca_cert) {
+				argp_failure(state, 1, 0, "Option --ca-cert is mandatory for HTTPS protocol.");
+			}
 		}
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -208,11 +214,19 @@ void main_loop(struct httprcclient *app) {
 	CURLcode rc;
 	useconds_t sleep_interval;
 	struct response_buf *buf;
+	long response_code;
 
 	buf = response_buf_new();
 
 	if (app->ca_cert) {
+		// Replace system-wide CAs
 		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_CAINFO, app->ca_cert), "CURLOPT_CAINFO");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_CAPATH, NULL), "CURLOPT_CAPATH");
+
+		// Could be used in complex PKIs, when allowing system-wide CAs to be used.
+		//curlc_filter(curl_easy_setopt(app->curl, CURLOPT_ISSUERCERT, app->ca_cert), "CURLOPT_ISSUERCERT");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSL_VERIFYPEER, 1), "CURLOPT_SSL_VERIFYPEER");
+		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSL_VERIFYHOST, 2), "CURLOPT_SSL_VERIFYHOST");
 	}
 	if (app->client_cert) {
 		curlc_filter(curl_easy_setopt(app->curl, CURLOPT_SSLCERT, app->client_cert), "CURLOPT_SSLCERT");
@@ -242,10 +256,19 @@ void main_loop(struct httprcclient *app) {
 			goto skip;
 		}
 
+		rc = curl_easy_getinfo(app->curl, CURLINFO_RESPONSE_CODE, &response_code);
+		if (rc != CURLE_OK) {
+			log_error("libcurl: %s: %s\n", curl_easy_strerror(rc), app->curl_error_buffer);
+			goto skip;
+		}	
+
 		if (app->verbose) {
-			printf("RX: %.*s\n", (int)buf->size, buf->start);
+			printf("RX (%d): %.*s\n", response_code, (int)buf->size, buf->start);
 		}
-		process_response(app, buf, &sleep_interval);
+
+		if (response_code >= 200 && response_code <= 299) {
+			process_response(app, buf, &sleep_interval);
+		}
 skip:
 		usleep(sleep_interval);
 	}
