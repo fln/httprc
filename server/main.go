@@ -15,17 +15,17 @@ import (
 
 type Client struct {
 	sync.RWMutex
-	PendingTasks  []Command
-	FinishedTasks []FinishedTask
+	PendingTasks  []Command      `json:"pending"`
+	FinishedTasks []FinishedTask `json:"finished"`
 	LastSeen      struct {
-		Time time.Time
-		IP   string
-	}
+		Time time.Time `json:"time"`
+		IP   string    `json:"IP"`
+	} `json:"lastSeen"`
 }
 
 type FinishedTask struct {
-	Command Command
-	Result  Result
+	Command Command `json:"command"`
+	Result  Result  `json:"result"`
 }
 
 type RCServer struct {

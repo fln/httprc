@@ -1,0 +1,12 @@
+<div class="row">
+<h1>Device list</h1>
+<p>Please choose a device to switch to command execution mode:</p>
+<table class="table">
+	</tr>
+		<th>Device</th>
+	</tr>
+	<tr ng-repeat="d in list.devices">
+		<td><a ui-sref="device({deviceID: d})">{{d}}</a></td>
+	</tr>
+</table>
+</div>

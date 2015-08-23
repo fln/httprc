@@ -1,0 +1,67 @@
+<div class="row" id="client-info">
+	Last seen {{device.state.lastSeen.time}}<br />
+	Ago {{device.seenAgo}}<br />
+	IP {{device.state.lastSeen.IP}}<br />
+	<button class="btn btn-primary" ng-click="device.reload()">Reload</button>
+</div>
+
+<h3>Command execution log</h3>
+<div class="row" ng-repeat="f in device.state.finished">
+	<div class="col-xs-6">
+		Command: {{f.command}}
+		<pre ng-if="f.command.stdin">{{f.command.stdin}}</pre>
+	</div>
+	<div class="col-xs-6">
+		<pre><span class="text-success">{{f.result.stdout}}</span><span class="text-danger">{{f.result.stderr}}</span></pre>
+		<p>Return code: {{f.result.returnCode}}</p>
+		<p>Execution duration: {{f.result.durationMs}}</p>
+	</div>
+</div>
+
+<div class="row">
+        <h3>Command execution schedule</h3>
+	<div ng-repeat="p in device.state.pending">
+		<pre>{{p}}</pre>
+	</div>
+</div>
+
+
+<div class="row">
+<h3>Schedule new command execution</h3>
+<form>
+	<div class="col-xs-9">
+		<div class="form-group">
+			<label for="command">Command</label>
+			<input type="text" class="form-control" id="command" ng-model="device.newCmd.command" placeholder="Command">
+		</div>
+		<div class="form-group">
+			<label for="stdin">Stdin</label>
+			<textarea class="form-control" id="stdin" ng-model="device.newCmd.stdin" rows="3"></textarea>
+		</div>
+		<!--div class="radio">
+			<label>
+				<input type="radio" name="cleanEnvironment" value="">Use default environment
+			</label>
+			<label>
+				<input type="radio" name="cleanEnvironment" value="false">Append to current environment
+			</label>
+			<label>
+				<input type="radio" name="cleanEnvironment" value="true">Replace existing environment
+			</label>
+		</div-->
+
+		<button type="submit" class="btn btn-default" ng-click="device.scheduleNewCommand()">Schedule</button>
+	</div>
+	<div class="col-xs-3">
+		<h4>Execution constraints</h4>
+		<div class="form-group">
+			<label for="waitTime">Wait time (ms)</label>
+			<input type="text" class="form-control" id="waitTimeMs" ng-model="device.newCmd.waitTimeMs" placeholder="Max execution time in ms" value="10000">
+		</div>
+		<div class="form-group">
+			<label for="outputBufferSize">Output buffer size (bytes)</label>
+			<input type="text" class="form-control" id="outputBufferSize" ng-model="device.newCmd.outputBufferSize" placeholder="Output buffer size in bytes" value="1048576">
+		</div>
+	</div>
+</form>
+</div>
