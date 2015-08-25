@@ -8,13 +8,16 @@
 <h3>Command execution log</h3>
 <div class="row" ng-repeat="f in device.state.finished">
 	<div class="col-xs-6">
-		Command: {{f.command}}
+		<p ng-if="f.command.directory">Directory: <span class="label label-info">{{f.command.directory}}</span></p>
+		<p>Command: <span class="label label-primary">{{f.command.command}}</span> <span class="label label-default" ng-repeat="a in f.command.args track by $index" data-add-space>{{a}}</span</p>
+		<p ng-if="f.command.environment">Environment: <span class="label label-default" ng-repeat="(key, val) in f.command.environment" data-add-space>{{key}}={{val}}</span></p>
+		<p>Return code: {{f.result.returnCode}}</p>
+		<p>Execution duration: {{f.result.durationMs | moment_duration}}</p>
+		Command: {{f.command}}<br />
 		<pre ng-if="f.command.stdin">{{f.command.stdin}}</pre>
 	</div>
 	<div class="col-xs-6">
 		<pre><span class="text-success">{{f.result.stdout}}</span><span class="text-danger">{{f.result.stderr}}</span></pre>
-		<p>Return code: {{f.result.returnCode}}</p>
-		<p>Execution duration: {{f.result.durationMs}}</p>
 	</div>
 </div>
 
@@ -28,29 +31,82 @@
 
 <div class="row">
 <h3>Schedule new command execution</h3>
-<form>
+<form class="form-horizontal">
 	<div class="col-xs-9">
 		<div class="form-group">
-			<label for="command">Command</label>
-			<input type="text" class="form-control" id="command" ng-model="device.newCmd.command" placeholder="Command">
+			<label for="command" class="col-xs-2">Command</label>
+			<div class="col-xs-10">
+				<input type="text" class="form-control" id="command" ng-model="device.newCmd.command" placeholder="Command">
+			</div>
+		</div>
+		<div class="form-inline form-group">
+			<label class="col-xs-2">Args</label>
+			<div class="col-xs-10">
+				<div class="input-group" ng-repeat="a in device.newCmd.args track by $index">
+					<div class="input-group-addon">{{a}}</div>
+					<span class="input-group-btn">
+						<button class="btn btn-default" ng-click="device.newCmd.args.splice($index, 1)" type="button">-</button>
+					</span>
+				</div>
+				<div class="input-group">
+					<input type="text" ng-model="device.tmpArg" class="form-control" placeholder="Argument">
+					<span class="input-group-btn">
+						<button class="btn btn-default" type="button" ng-click="device.appendArg()">+</button>
+					</span>
+				</div>
+			</div>
 		</div>
 		<div class="form-group">
-			<label for="stdin">Stdin</label>
-			<textarea class="form-control" id="stdin" ng-model="device.newCmd.stdin" rows="3"></textarea>
+			<label for="dir" class="col-xs-2">Directory</label>
+			<div class="col-xs-10">
+				<input type="text" class="form-control" id="dir" ng-model="device.newCmd.directory" placeholder="Directory to execute command in">
+			</div>
 		</div>
-		<!--div class="radio">
-			<label>
-				<input type="radio" name="cleanEnvironment" value="">Use default environment
-			</label>
-			<label>
-				<input type="radio" name="cleanEnvironment" value="false">Append to current environment
-			</label>
-			<label>
-				<input type="radio" name="cleanEnvironment" value="true">Replace existing environment
-			</label>
-		</div-->
+		<div class="form-group">
+			<label for="stdin" class="col-xs-2">Stdin</label>
+			<div class="col-xs-10">
+				<textarea class="form-control" id="stdin" ng-model="device.newCmd.stdin" rows="3"></textarea>
+			</div>
+		</div>
+		<div class="form-group">
+			<label class="col-xs-2">Environment</label>
+			<div class="col-xs-10 radio">
+				<label>
+					<input type="radio" ng-model="device.newCmd.cleanEnvironment" name="cleanEnvironment" ng-value="false" checked>Append to current environment
+				</label>
+				<label>
+					<input type="radio" ng-model="device.newCmd.cleanEnvironment" name="cleanEnvironment" ng-value="true">Replace existing environment
+				</label>
+			</div>
+		</div>
+		<div class="form-inline form-group">
+			<label class="col-xs-2">Environment variables</label>
+			<div class="col-xs-10">
+				<div class="input-group" ng-repeat="(key, val) in device.newCmd.environment">
+					<div class="input-group-addon">{{key}}</div>
+					<div class="input-group-addon">=</div>
+					<div class="input-group-addon">{{val}}</div>
+					<span class="input-group-btn">
+						<!--button class="btn btn-default" ng-click="delete device.newCmd.environment[key]" type="button">-</button-->
+						<button class="btn btn-default" ng-click="device.removeEnv(key)" type="button">-</button>
+					</span>
+				</div>
+				<div class="input-group">
+					<input type="text" ng-model="device.tmpEnvKey" class="form-control" placeholder="Variable">
+					<div class="input-group-addon">=</div>
+					<input type="text" ng-model="device.tmpEnvVal" class="form-control" placeholder="Value">
+					<span class="input-group-btn">
+						<button class="btn btn-default" type="button" ng-click="device.newCmd.environment[device.tmpEnvKey] = device.tmpEnvVal">+</button>
+					</span>
+				</div>
+			</div>
+		</div>
 
-		<button type="submit" class="btn btn-default" ng-click="device.scheduleNewCommand()">Schedule</button>
+		<div class="form-group">
+			<div class="col-xs-offset-2 col-xs-10">
+				<button class="btn btn-primary" ng-click="device.scheduleNewCommand()">Schedule command execution</button>
+			</div>
+		</div>
 	</div>
 	<div class="col-xs-3">
 		<h4>Execution constraints</h4>

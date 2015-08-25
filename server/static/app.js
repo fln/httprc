@@ -9,6 +9,25 @@ define([
 
 var app = angular.module('httprcDemo', ['ngResource', 'ui.router']);
 
+app.filter('moment_duration', function() {
+	return function (data) {
+		if (data < 1000) {
+			return data + " millisecond"
+		} else {
+			return moment.duration(data).humanize();
+		}
+	};
+});
+
+app.directive('addSpace', [function () {
+        return function (scope, element) {
+            if(!scope.$last){
+                element.after('&nbsp;');
+            }
+        }
+    }
+]);
+
 app.config([     '$stateProvider','$locationProvider',
         function($stateProvider,   $locationProvider) {
 
@@ -43,10 +62,14 @@ app.config([     '$stateProvider','$locationProvider',
 
 			this.newCmd = {
 				command: "",
+				args: [],
+				cleanEnvironment: false,
+				environment: {},
 				stdin: "",
 				waitTimeMs: 10000,
 				outputBufferSize: 1048576
 			};
+			this.tmpArg = "";
 
 			this.reload = function() {
 				this.state = $resource('v1/httprc/client/' + $stateParams.deviceID).get();
@@ -55,6 +78,15 @@ app.config([     '$stateProvider','$locationProvider',
 					this.seenAgo = moment(this.state.lastSeen.time).fromNow();
 				}.bind(this));
 			};
+
+			this.appendArg = function() {
+				this.newCmd.args.push(this.tmpArg);
+				this.tmpArg = '';
+			}
+
+			this.removeEnv = function(key) {
+				delete this.newCmd.environment[key];
+			}
 
 			this.scheduleNewCommand = function() {
 				var r = $resource('v1/httprc/client/' + this.deviceID + "/task");
