@@ -29,11 +29,17 @@ Basic server architecture:
 +-------------+        0.0.0.0:8989     127.0.0.1:8889
 ```
 
+For near real-time command execution this server is using
+[long-polling](https://en.wikipedia.org/wiki/Push_technology#Long_polling) in
+the client backend server and
+[SSE](https://en.wikipedia.org/wiki/Server-sent_events)
+in admin web UI.
 
 Building
 --------
 
-Install golang tools by following http://golang.org/doc/install.
+Install golang tools by following
+[official golang installation instructions](http://golang.org/doc/install).
 
 Download dependencies:
 ```bash
@@ -46,7 +52,7 @@ Usage
 
 Server can be started in three modes:
 
-* **Plaintext mode**. Server is waiting for clients to connect using plain-text
+* **Plain-text mode**. Server is waiting for clients to connect using plain-text
 HTTP. Clients must provide client identifier in the request url.
 * **SSL mode without client authentication**. Server is waiting for clients to
 connect using HTTPS and does not require client certificate. Clients must
@@ -56,7 +62,7 @@ connect using HTTPS, and only accepts the connection if client provides a valid
 certificate signed by the CA the server trusts. In this mode client certificate
 Common Name field is used as client identifier.
 
-Starting server in plaintext mode:
+Starting server in plain-text mode:
 ```bash
 ./server
 ```
@@ -81,7 +87,7 @@ Summary of available startup arguments:
 | Argument                | Description                                                                               |
 |-------------------------|-------------------------------------------------------------------------------------------|
 | --server-cert FILE      | Path to server certificate. This certificate is used only for communication with clients. |
-| --server-key FILE       | Path to server pricate key. This pricate key is used only for communication with clients. |
+| --server-key FILE       | Path to server private key. This private key is used only for communication with clients. |
 | --client-ca FILE        | Path to CA certificate. Used to authenticate clients.                                     |
-| --listen-client ADDRESS | Address on which to start client facing server. Default value is ":8989".                 |
-| --listen-admin ADDRESS  | Address on which to start admin facing server. Default value is "127.0.0.1:8889".         |
+| --listen-client ADDRESS | Address on which to start client backend. Default value is ":8989".                       |
+| --listen-admin ADDRESS  | Address on which to start admin web UI. Default value is "127.0.0.1:8889".                |
