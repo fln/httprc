@@ -9,6 +9,12 @@ define([
 
 var app = angular.module('httprcDemo', ['ngResource', 'ui.router']);
 
+app.filter('moment_fromNow', function() {
+	return function (data) {
+		return moment(data).fromNow();
+	};
+});
+
 app.filter('moment_duration', function() {
 	return function (data) {
 		if (data < 1000) {
@@ -18,6 +24,17 @@ app.filter('moment_duration', function() {
 		}
 	};
 });
+
+app.filter('rcToString', function() {
+	return function (data) {
+		if (data == 0) {
+			return "success";
+		} else {
+			return "failure";
+		}
+	};
+});
+
 
 app.directive('addSpace', [function () {
         return function (scope, element) {
@@ -47,17 +64,15 @@ app.config([     '$stateProvider','$locationProvider',
 	}).state('device', {
 		url: '/device/{deviceID}',
 		templateUrl: 'device.partial.html',
-			/*'deviceState': ['$resource', '$stateParams', function($resource, $stateParams) {
-				return $resource('/v1/httprc/client/' + $stateParams.deviceID),get();
-			}]*/
 		resolve: {
 			'deviceState': ['$resource', '$stateParams', function($resource, $stateParams) {
-				return $resource('v1/httprc/client/' + $stateParams.deviceID).get();
+				return $resource('v1/httprc/client/' + $stateParams.deviceID).get().$promise;
 			}]
 		},
-		controller: ['$stateParams', '$resource', 'deviceState', function($stateParams, $resource, deviceState) {
+		controller: ['$scope', '$stateParams', '$resource', 'deviceState', function($scope, $stateParams, $resource, deviceState) {
 			this.state = deviceState;
 			this.deviceID = $stateParams.deviceID;
+			//console.log(deviceState);
 			this.seenAgo = moment(deviceState.lastSeen.time).fromNow();
 
 			this.newCmd = {
@@ -73,7 +88,6 @@ app.config([     '$stateProvider','$locationProvider',
 
 			this.reload = function() {
 				this.state = $resource('v1/httprc/client/' + $stateParams.deviceID).get();
-				console.log(this.state);
 				this.state.$promise.then(function (data) {
 					this.seenAgo = moment(this.state.lastSeen.time).fromNow();
 				}.bind(this));
@@ -93,6 +107,30 @@ app.config([     '$stateProvider','$locationProvider',
 				r.save(this.newCmd)
 				console.log(this.newCmd)
 			};
+
+			this.handleNewFinished = function(data) {
+			}
+
+			var source = new EventSource('v1/httprc/client/' + $stateParams.deviceID + '/events');
+			source.addEventListener('result', function (msg) {
+				$scope.$apply(function () {
+					var finishedTask = JSON.parse(msg.data);
+					this.state.finished.push(finishedTask);
+					for (var i = 0; i < this.state.pending.length; i += 1) {
+						if (this.state.pending[i].id == finishedTask.command.id) {
+							this.state.pending.splice(i, 1)
+							break;
+						}
+					}
+				}.bind(this));	
+			}.bind(this), false);
+
+			source.addEventListener('command', function (msg) {
+				$scope.$apply(function () {
+					this.state.pending.push(JSON.parse(msg.data));
+				}.bind(this));	
+			}.bind(this), false);
+
 		}],
 		controllerAs: 'device'
 	});

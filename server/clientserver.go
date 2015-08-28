@@ -10,6 +10,8 @@ var finishedTaskLimit = 10
 
 func (app *RCServer) clientPostTask(w http.ResponseWriter, r *http.Request, clientID string) {
 	var result Result
+	var fTask FinishedTask
+
 	if err := RequestJsonToStruct(r, &result); err != nil {
 		log.Print(err)
 		RespondErrorCode(w, 400)
@@ -29,10 +31,12 @@ func (app *RCServer) clientPostTask(w http.ResponseWriter, r *http.Request, clie
 	for i, c := range client.PendingTasks {
 		if c.ID == result.ID {
 			client.PendingTasks = append(client.PendingTasks[:i], client.PendingTasks[i+1:]...)
-			client.FinishedTasks = append(client.FinishedTasks, FinishedTask{
+			fTask = FinishedTask{
 				Command: c,
 				Result:  result,
-			})
+			}
+			client.FinishedTasks = append(client.FinishedTasks, fTask)
+			app.ps.Pub(fTask, clientID+"-result")
 			break
 		}
 	}
@@ -43,7 +47,9 @@ func (app *RCServer) clientPostTask(w http.ResponseWriter, r *http.Request, clie
 }
 
 func (app *RCServer) clientGetTask(w http.ResponseWriter, r *http.Request, clientID string) {
-	defaultSleepTime := 1000
+	defaultSleepTime := 100
+	log.Print("Client ", clientID, " connected")
+	defer log.Print("Client ", clientID, " disconnected")
 
 	app.ClientMapLock.RLock()
 	client := app.ClientMap[clientID]
@@ -65,28 +71,31 @@ func (app *RCServer) clientGetTask(w http.ResponseWriter, r *http.Request, clien
 	client.Unlock()
 
 	client.RLock()
-	defer client.RUnlock()
-	if len(client.PendingTasks) == 0 {
-		RespondJsonObject(w, &Task{SelepMs: defaultSleepTime}, false)
+	if len(client.PendingTasks) != 0 {
+		RespondJsonObject(w, &Task{
+			SelepMs: defaultSleepTime,
+			Exec:    &client.PendingTasks[0],
+		}, false)
+		client.RUnlock()
 		return
 	}
+	client.RUnlock()
 
-	log.Print(r)
-	/*dummyCmd := &Command{
-		ID:               newUUID(),
-		Command:          "/bin/cat",
-		Dir:              "/",
-		Args:             []string{"-", "etc/hostname", "/proc/vmallocinfo", "/proc/self/environ"},
-		Stdin:            "this is \x00 a test\n",
-		Environment:      map[string]string{"XXX": "yyy", "LS_COLORS": ""},
-		CleanEnvironment: true,
-		WaitTimeMs:       10000,
-		OutputBufferSize: 1024 * 1024,
-	}*/
-
-	task := Task{
-		SelepMs: defaultSleepTime,
-		Exec:    &client.PendingTasks[0],
+	topic := clientID + "-cmd"
+	cmdChan := app.ps.Sub(topic)
+	defer app.ps.Unsub(cmdChan, topic)
+	timeoutChan := time.After(60 * time.Second)
+	select {
+	case msg := <-cmdChan:
+		cmd, ok := msg.(Command)
+		if ok {
+			RespondJsonObject(w, &Task{
+				SelepMs: defaultSleepTime,
+				Exec:    &cmd,
+			}, false)
+			return
+		}
+	case <-timeoutChan:
 	}
-	RespondJsonObject(w, &task, false)
+	RespondJsonObject(w, &Task{SelepMs: defaultSleepTime}, false)
 }

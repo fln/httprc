@@ -1,30 +1,42 @@
+<div class="row">
+	<a ui-sref="list">
+		<button class="btn btn-primary"><span class="glyphicon glyphicon-arrow-left" aria-hidden="true"></span> Back</button>
+	</a>
+	<button class="btn btn-primary" ng-click="device.reload()"><span class="glyphicon glyphicon-refresh" aria-hidden="true"></span> Reload</button>
+</div>
 <div class="row" id="client-info">
+	<h1>Device #{{device.deviceID}}</h1>
 	Last seen {{device.state.lastSeen.time}}<br />
 	Ago {{device.seenAgo}}<br />
 	IP {{device.state.lastSeen.IP}}<br />
-	<button class="btn btn-primary" ng-click="device.reload()">Reload</button>
 </div>
 
-<h3>Command execution log</h3>
-<div class="row" ng-repeat="f in device.state.finished">
-	<div class="col-xs-6">
-		<p ng-if="f.command.directory">Directory: <span class="label label-info">{{f.command.directory}}</span></p>
-		<p>Command: <span class="label label-primary">{{f.command.command}}</span> <span class="label label-default" ng-repeat="a in f.command.args track by $index" data-add-space>{{a}}</span</p>
-		<p ng-if="f.command.environment">Environment: <span class="label label-default" ng-repeat="(key, val) in f.command.environment" data-add-space>{{key}}={{val}}</span></p>
-		<p>Return code: {{f.result.returnCode}}</p>
-		<p>Execution duration: {{f.result.durationMs | moment_duration}}</p>
-		Command: {{f.command}}<br />
-		<pre ng-if="f.command.stdin">{{f.command.stdin}}</pre>
-	</div>
-	<div class="col-xs-6">
-		<pre><span class="text-success">{{f.result.stdout}}</span><span class="text-danger">{{f.result.stderr}}</span></pre>
+<div class="row">
+	<h3>Command execution log</h3>
+	<div class="row" ng-repeat="f in device.state.finished">
+		<div class="col-xs-6">
+			<h4>{{f.command.id}}</h4>
+			<p ng-if="f.command.directory">Directory: <span class="label label-info">{{f.command.directory}}</span></p>
+			<p>Command: <span class="label label-primary">{{f.command.command}}</span> <span class="label label-default" ng-repeat="a in f.command.args track by $index" data-add-space>{{a}}</span</p>
+			<p ng-if="f.command.environment">Environment: <span class="label label-default" ng-repeat="(key, val) in f.command.environment" data-add-space>{{key}}={{val}}</span></p>
+			<pre ng-if="f.command.stdin">{{f.command.stdin}}</pre>
+			<p>Execution result: {{f.result.returnCode}} ({{f.result.returnCode | rcToString}})</p>
+			<p>Execution duration: {{f.result.durationMs/1000}} sec</p>
+		</div>
+		<div class="col-xs-6">
+			<pre><span class="text-success">{{f.result.stdout}}</span><span class="text-danger">{{f.result.stderr}}</span></pre>
+		</div>
 	</div>
 </div>
 
 <div class="row">
         <h3>Command execution schedule</h3>
 	<div ng-repeat="p in device.state.pending">
-		<pre>{{p}}</pre>
+		<h4>{{p.id}}</h4>
+		<p ng-if="p.directory">Directory: <span class="label label-info">{{p.directory}}</span></p>
+		<p>Command: <span class="label label-primary">{{p.command}}</span> <span class="label label-default" ng-repeat="a in p.args track by $index" data-add-space>{{a}}</span</p>
+		<p ng-if="p.environment">Environment: <span class="label label-default" ng-repeat="(key, val) in p.environment" data-add-space>{{key}}={{val}}</span></p>
+		<pre ng-if="p.stdin">{{p.stdin}}</pre>
 	</div>
 </div>
 
@@ -111,12 +123,15 @@
 	<div class="col-xs-3">
 		<h4>Execution constraints</h4>
 		<div class="form-group">
-			<label for="waitTime">Wait time (ms)</label>
-			<input type="text" class="form-control" id="waitTimeMs" ng-model="device.newCmd.waitTimeMs" placeholder="Max execution time in ms" value="10000">
+			<label for="waitTime">Max execution time</label>
+			<div class="input-group">
+				<input type="number" class="form-control" id="waitTimeMs" ng-model="device.newCmd.waitTimeMs" placeholder="Max execution time" value="10">
+				<div class="input-group-addon">sec</div>
+			</div>
 		</div>
 		<div class="form-group">
 			<label for="outputBufferSize">Output buffer size (bytes)</label>
-			<input type="text" class="form-control" id="outputBufferSize" ng-model="device.newCmd.outputBufferSize" placeholder="Output buffer size in bytes" value="1048576">
+			<input type="number" class="form-control" id="outputBufferSize" ng-model="device.newCmd.outputBufferSize" placeholder="Output buffer size in bytes" value="1048576">
 		</div>
 	</div>
 </form>

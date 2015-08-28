@@ -4,9 +4,13 @@
 <table class="table">
 	</tr>
 		<th>Device</th>
+		<th>Last Seen</th>
+		<th>IP address</th>
 	</tr>
 	<tr ng-repeat="d in list.devices">
-		<td><a ui-sref="device({deviceID: d})">{{d}}</a></td>
+		<td><a ui-sref="device({deviceID: d.id})">{{d.id}}</a></td>
+		<td>{{d.time}} ({{d.time | moment_fromNow}})</td>
+		<td>{{d.IP}}</td>
 	</tr>
 </table>
 </div>

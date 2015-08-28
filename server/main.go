@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/tuxychandru/pubsub"
 )
 
 type Client struct {
@@ -33,6 +34,7 @@ type RCServer struct {
 	ClientMapLock sync.RWMutex
 	server        *http.Server
 	adminServer   *http.Server
+	ps            *pubsub.PubSub
 }
 
 type Result struct {
@@ -135,6 +137,7 @@ func (app *RCServer) startAdminServer(addr string) {
 	router.HandleFunc("/v1/httprc/clientList", app.adminClientList).Methods("GET")
 	router.HandleFunc("/v1/httprc/client/{clientID}", app.adminClientGet).Methods("GET")
 	router.HandleFunc("/v1/httprc/client/{clientID}/task", app.adminAddTask).Methods("POST")
+	router.HandleFunc("/v1/httprc/client/{clientID}/events", app.adminDeviceEvents).Methods("GET")
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 	err := app.adminServer.ListenAndServe()
 	log.Fatal(err)
@@ -161,9 +164,11 @@ func main() {
 
 	app := RCServer{
 		ClientMap: make(map[string]*Client),
+		ps:        pubsub.New(10),
 	}
 
 	go app.startTLSAuth(":8989", *serverCertFile, *serverKeyFile, *clientCACertFile)
 	go app.startAdminServer(":8889")
 	select {}
+	app.ps.Shutdown()
 }
