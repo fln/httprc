@@ -150,20 +150,21 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 
 		if (ev.data.fd == stdinfd) {
 			len = write(stdinfd, c->stdin_buffer + stdin_written, c->stdin_size - stdin_written);
-
-			if (len > 0) {
-				stdin_written += len;
-			}
 			if (len <= 0 || stdin_written == c->stdin_size) {
 				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stdinfd, NULL));
 				die_std_error(close(stdinfd));
+				stdinfd = -1;
+				continue;
 			}
+			stdin_written += len;
 		}
 
 		if (ev.data.fd == stdoutfd) {
 			len = read(stdoutfd, res->stdout_buffer + res->stdout_size, max_len - res->stdout_size);
 			if (len <= 0) {
 				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stdoutfd, NULL));
+				die_std_error(close(stdoutfd));
+				stdoutfd = -1;
 				continue;
 			}
 			res->stdout_size += len;
@@ -173,6 +174,8 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 			len = read(stderrfd, res->stderr_buffer + res->stderr_size, max_len - res->stderr_size);
 			if (len <= 0) {
 				die_std_error(epoll_ctl(epfd, EPOLL_CTL_DEL, stderrfd, NULL));
+				die_std_error(close(stderrfd));
+				stderrfd = -1;
 				continue;
 			}
 			res->stderr_size += len;
@@ -198,11 +201,16 @@ static struct result *manage_process(struct command *c, pid_t pid, int stdinfd, 
 	res->duration_ms = tv_diff_ms(&start_time);
 	res->id = c->id;
 error:
-	if (stdin_written != c->stdin_size) {
+	//if (stdin_written != c->stdin_size) {
+	if (stdinfd >= 0) {
 		die_std_error(close(stdinfd));
 	}
-	die_std_error(close(stdoutfd));
-	die_std_error(close(stderrfd));
+	if (stdoutfd >= 0) {
+		die_std_error(close(stdoutfd));
+	}
+	if (stderrfd >= 0) {
+		die_std_error(close(stderrfd));
+	}
 
 	return res;
 }
