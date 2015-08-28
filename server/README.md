@@ -50,39 +50,50 @@ $ go build  # compile the application
 Usage
 -----
 
-Server can be started in three modes:
+Server can be started in different security level modes.
 
-* **Plain-text mode**. Server is waiting for clients to connect using plain-text
+### Plain-text mode
+In this mode server is waiting for clients to connect using plain-text
 HTTP. Clients must provide client identifier in the request url.
-* **SSL mode without client authentication**. Server is waiting for clients to
-connect using HTTPS and does not require client certificate. Clients must
-provide client identifier in the request url.
-* **SSL mode with client authentication**. Server is waiting for clients to
-connect using HTTPS, and only accepts the connection if client provides a valid
-certificate signed by the CA the server trusts. In this mode client certificate
-Common Name field is used as client identifier.
 
-Starting server in plain-text mode:
+Starting server in plain text mode requires no additional arguments:
+
 ```bash
 ./server
 ```
+
 In this mode clients should use backend URL `http://server.example.net:8989/httprc/{clientID}`.
 
-Starting server in HTTPS **without** client authentication mode:
+### HTTPS without client authentication
+
+Server is waiting for clients to connect using HTTPS and does not require
+client certificate. Clients must provide client identifier in the request url.
+
+To start server in HTTPS mode without client authentication server certificate
+and private key must be provided:
+
 ```bash
 ./server --server-cert ../ca/server.pem  --server-key ../ca/server.key
 ```
 In this mode clients should use backend URL `https://server.example.net:8989/httprc/{clientID}`.
 
-Starting server in HTTPS **with** client authentication mode:
+### HTTPS with client authentication mode
+
+Server is waiting for clients to connect using HTTPS, and only accepts the
+connection if client provides a valid certificate signed by the CA the server
+trusts. In this mode client certificate Common Name field is used as client
+identifier.
+
+To use client authentication server must be provided with CA certificate:
+
 ```bash
 ./server --client-ca ../ca/ca.pem  --server-cert ../ca/server.pem  --server-key ../ca/server.key
 ```
-In this mode clients can use either `https://server.example.net:8989/httprc/{clientID}`
-or `https://server.example.net:8989/httprc` as backend URL.
 
-Summary of available startup arguments:
+In this mode clients are identified by the client certificate and can use
+backend URL without `clientID` part `https://server.example.net:8989/httprc`.
 
+### Startup arguments summary
 
 | Argument                | Description                                                                               |
 |-------------------------|-------------------------------------------------------------------------------------------|
