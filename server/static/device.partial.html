@@ -125,13 +125,17 @@
 		<div class="form-group">
 			<label for="waitTime">Max execution time</label>
 			<div class="input-group">
-				<input type="number" class="form-control" id="waitTimeMs" ng-model="device.newCmd.waitTimeMs" placeholder="Max execution time" value="10">
+				<input type="number" class="form-control" id="waitTimeMs" ng-model="device.newCmd.waitTimeMs" placeholder="Max execution time" data-ms-as-sec>
 				<div class="input-group-addon">sec</div>
 			</div>
 		</div>
 		<div class="form-group">
-			<label for="outputBufferSize">Output buffer size (bytes)</label>
-			<input type="number" class="form-control" id="outputBufferSize" ng-model="device.newCmd.outputBufferSize" placeholder="Output buffer size in bytes" value="1048576">
+			<label for="outputBufferSize">Output buffer size</label>
+
+			<div class="input-group">
+				<input type="number" class="form-control" id="outputBufferSize" ng-model="device.newCmd.outputBufferSize" placeholder="Output buffer size in bytes" data-bytes-as-kb>
+				<div class="input-group-addon">kB</div>
+			</div>
 		</div>
 	</div>
 </form>

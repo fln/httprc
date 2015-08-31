@@ -67,7 +67,7 @@ func tlsAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
 		var cn string
 
 		if r.TLS == nil {
-			log.Print("Client without TLS context")
+			RespondErrorCode(w, 401)
 			return
 		}
 		for _, chain := range r.TLS.VerifiedChains {
@@ -79,21 +79,23 @@ func tlsAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
 				cn = cert.Subject.CommonName
 			}
 		}
+		if cn == "" {
+			RespondErrorCode(w, 401)
+		}
+		f(w, r, cn)
+	})
+}
+
+func urlAuth(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientID := mux.Vars(r)["clientID"]
-		log.Printf("tlsAuth, CN: %s, clientID: %s", cn, clientID)
-		if cn != "" {
-			f(w, r, cn)
+		if clientID != "" {
+			f(w, r, clientID)
 		} else {
 			RespondErrorCode(w, 401)
 		}
 	})
 }
-
-//func (app *RCServer) startSimple(addr string) {
-//}
-
-//func (app *RCServer) startTLS(addr string, certFile string, keyFile string) {
-//}
 
 func (app *RCServer) startTLSAuth(addr string, certFile string, keyFile string, caFile string) {
 	var err error
@@ -102,9 +104,6 @@ func (app *RCServer) startTLSAuth(addr string, certFile string, keyFile string, 
 		Addr:    addr,
 		Handler: router,
 	}
-
-	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.clientGetTask)).Methods("GET")
-	router.Handle("/v1/httprc/{clientID}", tlsAuth(app.clientPostTask)).Methods("POST")
 
 	// Enable client authentication
 	if caFile != "" {
@@ -117,6 +116,12 @@ func (app *RCServer) startTLSAuth(addr string, certFile string, keyFile string, 
 		} else {
 			app.server.TLSConfig.ClientCAs.AppendCertsFromPEM(caPEM)
 		}
+		router.Handle("/httprc", tlsAuth(app.clientGetTask)).Methods("GET")
+		router.Handle("/httprc/{clientID}", tlsAuth(app.clientGetTask)).Methods("GET")
+		router.Handle("/httprc/{clientID}", tlsAuth(app.clientPostTask)).Methods("POST")
+	} else {
+		router.Handle("/httprc/{clientID}", urlAuth(app.clientGetTask)).Methods("GET")
+		router.Handle("/httprc/{clientID}", urlAuth(app.clientPostTask)).Methods("POST")
 	}
 
 	if certFile != "" && keyFile != "" {
@@ -144,31 +149,32 @@ func (app *RCServer) startAdminServer(addr string) {
 }
 
 func main() {
-	clientCACertFile := flag.String("ca-cert", "", "Enable client authentication using specified CA certificate")
+	clientCACertFile := flag.String("client-ca", "", "Enable client authentication using specified CA certificate")
 	serverCertFile := flag.String("server-cert", "", "Server certificate for TLS mode")
 	serverKeyFile := flag.String("server-key", "", "Server private key for TLS mode")
-
+	listenClient := flag.String("listen-client", ":8989", "Address to listen for client connections")
+	listenAdmin := flag.String("listen-admin", "127.0.0.1:8889", "Address to listen for admin connections")
 	flag.Parse()
 
-	if *clientCACertFile == "" {
-		log.Fatal("Missing \"clientCA\" flag")
-	}
+	/*	if *clientCACertFile == "" {
+			log.Fatal("Missing \"client-ca\" flag")
+		}
 
-	if *serverCertFile == "" {
-		log.Fatal("Missing \"serverCert\" flag")
-	}
+		if *serverCertFile == "" {
+			log.Fatal("Missing \"server-cert\" flag")
+		}
 
-	if *serverKeyFile == "" {
-		log.Fatal("Missing \"serverKey\" flag")
-	}
+		if *serverKeyFile == "" {
+			log.Fatal("Missing \"server-key\" flag")
+		}*/
 
 	app := RCServer{
 		ClientMap: make(map[string]*Client),
 		ps:        pubsub.New(10),
 	}
 
-	go app.startTLSAuth(":8989", *serverCertFile, *serverKeyFile, *clientCACertFile)
-	go app.startAdminServer(":8889")
+	go app.startTLSAuth(*listenClient, *serverCertFile, *serverKeyFile, *clientCACertFile)
+	go app.startAdminServer(*listenAdmin)
 	select {}
 	app.ps.Shutdown()
 }

@@ -9,6 +9,37 @@ define([
 
 var app = angular.module('httprcDemo', ['ngResource', 'ui.router']);
 
+app.directive('msAsSec', function() {
+	return {
+		restrict: 'A',
+		require: 'ngModel',
+		link: function(scope, element, attr, ngModel) {
+			ngModel.$parsers.push(function (data) {
+				return (data || 0) * 1000;
+			});
+			ngModel.$formatters.push(function (data) {
+				return (data || 0) / 1000;
+			});
+		}
+	};
+});
+
+app.directive('bytesAsKb', function() {
+	return {
+		restrict: 'A',
+		require: 'ngModel',
+		link: function(scope, element, attr, ngModel) {
+			ngModel.$parsers.push(function (data) {
+				return (data || 0) * 1024;
+			});
+			ngModel.$formatters.push(function (data) {
+				return (data || 0) / 1024;
+			});
+		}
+	};
+});
+
+
 app.filter('moment_fromNow', function() {
 	return function (data) {
 		return moment(data).fromNow();

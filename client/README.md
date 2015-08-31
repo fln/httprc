@@ -46,7 +46,7 @@ is useful only for secure internal networks or debugging.
 executed only if server certificate is signed by the CA that client application
 trusts. In this mode command execution results can be faked by malicious user,
 because server do not perform any client authentication.
-- *Mutually authenticaed* - both client and server have a certificate.
+- *Mutually authenticated* - both client and server have a certificate.
 Connection is established only if server accepts client certificate as trusted
 and client accepts server certificate as trusted. This is preferred mode to use
 this application in production environment.

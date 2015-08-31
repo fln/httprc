@@ -7,11 +7,11 @@ intended to be used for remotely controlling devices hidden behind firewalls.
 Components
 ----------
 
-Contents of this repository is:
+This repository contains:
 
-- [client](client/) implementation of client service written in C
-- [server](server/) implementation server service written in go
-- [ca](ca/) tools for building simple PKI for testing
+- [client](client/) implementation of client service (written in C).
+- [server](server/) implementation server service (written in golang).
+- [ca](ca/) tools for building simple PKI for testing.
 
 General system architecture
 ---------------------------
